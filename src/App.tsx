@@ -193,12 +193,12 @@ export default function App() {
         <button className="new-bank-button" onClick={() => setNewBankOpen(true)}><Plus size={16}/>新建题库</button>
         <div className="bank-list">{banks.map(b => <div className="bank-row" key={b.id}><button className={b.id === bank.id ? 'bank active' : 'bank'} onClick={() => selectBank(b)}>
           <span className="book-icon"><BookOpen size={17}/></span><span><strong>{b.name}</strong><small>{b.description || (b.source === 'local' ? '本地题库' : '远程题库')}</small></span><ChevronRight size={17}/>
-        </button><button className="rename-button" aria-label={`重命名题库 ${b.name}`} title="重命名题库" onClick={() => openRename('bank', b.id, b.name)}><Pencil size={13}/></button></div>)}</div>
+        </button><button className="rename-button" aria-label={`重命名题库 ${b.name}`} onClick={() => openRename('bank', b.id, b.name)}><Pencil size={13}/></button></div>)}</div>
         <button className={view === 'wrong' ? 'wrong-book active' : 'wrong-book'} onClick={showWrongBook}><AlertCircle size={17}/><span><strong>全局错题本</strong><small>汇总所有题库中的错题</small></span><em>{counts.wrong}</em></button>
         <div className="divider"/>
         <p className="eyebrow">章节导航</p>
         <div className="chapter-tree">{bank.chapters.map(chapter => <div className="chapter" key={chapter.id}>
-          <div className="chapter-title"><ChevronDown size={16}/><span>{chapter.name}</span><button className="rename-button" aria-label={`重命名章节 ${chapter.name}`} title="重命名章节" onClick={() => openRename('chapter', chapter.id, chapter.name)}><Pencil size={12}/></button></div>
+          <div className="chapter-title"><ChevronDown size={16}/><span>{chapter.name}</span><button className="rename-button" aria-label={`重命名章节 ${chapter.name}`} onClick={() => openRename('chapter', chapter.id, chapter.name)}><Pencil size={12}/></button></div>
           {chapter.sections.map(s => <button key={s.id} onClick={() => selectSection(s.id)} className={s.id === sectionId ? 'section active' : 'section'}><span>{s.name}</span><em>{s.questions.length}</em></button>)}
         </div>)}</div>
         <div className="aside-summary"><strong>学习概览</strong><div><span><i className="green"/>{counts.proficient} 熟练</span><span><i className="yellow"/>{counts.vague} 模糊</span><span><i className="red"/>{counts.wrong} 错题</span></div></div>
