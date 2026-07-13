@@ -46,12 +46,12 @@ async function waitForImages(container: HTMLElement) {
   })))
 }
 
-export function ExportPage({ questions, includeAnswers, pageNumber }: { questions: Question[]; includeAnswers: boolean; pageNumber: number }) {
+export function ExportPage({ questions, includeAnswers, pageNumber, showType = true }: { questions: Question[]; includeAnswers: boolean; pageNumber: number; showType?: boolean }) {
   return <article className="export-page">
     {questions.map(question => {
       const text = question.type === '图片题' && question.text === `第 ${question.number} 题` ? '' : question.text
       return <section className="export-question" key={question.id}>
-        <div className="export-question-title"><strong>{String(question.number).padStart(2, '0')}</strong><span>{question.type}</span></div>
+        <div className="export-question-title"><strong>{String(question.number).padStart(2, '0')}</strong>{showType && <span>{question.type}</span>}</div>
         {text && <p>{text}</p>}
         <AssetGallery keys={question.imageKeys} urls={question.imageUrl ? [question.imageUrl] : []} alt="题目配图"/>
         {question.options?.map(option => <p className="export-option" key={option}>{option}</p>)}
@@ -130,7 +130,7 @@ export default function ExportDialog({ banks, statuses, defaultBankId, defaultSe
       <div className="export-progress"><span>符合条件</span><strong>{questions.length} 题 / {pages.length} 页</strong></div>
       <div className="export-actions"><button disabled={!questions.length || exporting} onClick={() => onPdf(job)}><FileText/>导出 PDF</button><button disabled={!questions.length || exporting} onClick={exportImages}><FileImage/>{exporting ? '正在生成…' : '图片到文件夹'}</button></div>
       {!questions.length && <p className="export-empty">暂无符合条件的题目</p>}
-      <div className="image-export-stage" ref={pagesRef}>{pages.map((page, index) => <ExportPage key={index} questions={page} includeAnswers={includeAnswers} pageNumber={index + 1}/>)}</div>
+      <div className="image-export-stage" ref={pagesRef}>{pages.map((page, index) => <ExportPage key={index} questions={page} includeAnswers={includeAnswers} pageNumber={index + 1} showType={false}/>)}</div>
     </section>
   </div>
 }
