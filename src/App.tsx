@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, BookOpen, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, FolderSync, Menu, Pencil, Plus, RotateCcw, Search, Settings as SettingsIcon, X } from 'lucide-react'
+import { AlertCircle, BookOpen, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, FolderOpen, FolderSync, Menu, Pencil, Plus, RotateCcw, Search, Settings as SettingsIcon, X } from 'lucide-react'
 import type { Question, QuestionBank, QuestionStatus, Section } from './types'
 import { loadBanks, loadNavigation, loadStatuses, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, validateBanks, validateStatuses } from './store'
 import { clearAssets, deleteAssets } from './assets'
@@ -248,6 +248,16 @@ export default function App() {
       setWorkspaceState('error'); setToast(error instanceof Error ? error.message : '无法连接题库文件夹')
     }
   }
+  async function switchWorkspace() {
+    try {
+      if (workspaceHandle && workspaceState === 'connected') void writeWorkspaceManifest(workspaceHandle, banks, statuses, workspaceFolders).catch(() => {})
+      const handle = await chooseWorkspace()
+      await loadWorkspace(handle)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      setToast(error instanceof Error ? error.message : '无法切换本地题库')
+    }
+  }
   async function createBank() {
     const name = newBankName.trim()
     if (!name) { setToast('请输入题库名称'); return }
@@ -278,6 +288,7 @@ export default function App() {
         <input ref={node => { imageImportRef.current = node; node?.setAttribute('webkitdirectory', '') }} hidden type="file" multiple accept="image/*" onChange={e => importImages(e.target.files)}/>
         <div className="header-action-group import-tools">
           <button className={workspaceState === 'connected' ? 'tool-button workspace-connected primary-tool' : 'tool-button primary-tool'} title="连接本地题库文件夹并实时同步" onClick={connectWorkspace}><FolderSync/><span>{workspaceState === 'connected' ? '已连接' : '题库文件夹'}</span></button>
+          {workspaceState === 'connected' && <button className="tool-button" title="切换到其他本地题库目录" aria-label="切换本地题库" onClick={switchWorkspace}><FolderOpen/><span>切换题库</span></button>}
           <button className="tool-button" title="导入 JSON 题库" onClick={() => importRef.current?.click()}><FileUp/><span>导入</span></button>
           <button className="tool-button" title="批量导入题目图和答案图" onClick={() => imageImportRef.current?.click()}><FileImage/><span>图片</span></button>
         </div>
