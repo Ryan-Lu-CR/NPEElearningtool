@@ -27,6 +27,11 @@ describe('parseImageFilename', () => {
 })
 
 describe('parseStructuredImagePath', () => {
+  it('识别 Q/A 前缀和点号分片格式', () => {
+    expect(parseStructuredImagePath('01 行列式 1-基础.assets/Q-01-1-01.2.png', 'Q-01-1-01.2.png')).toMatchObject({ chapterCode: '01', sectionCode: '1', questionCode: '01', kind: 'question', order: 2 })
+    expect(parseStructuredImagePath('01 行列式 1-基础.assets/A-01-1-01.png', 'A-01-1-01.png')).toMatchObject({ kind: 'answer', order: 1 })
+  })
+
   it('识别用户现有的三段数字文件名和 assets 文件夹标题', () => {
     expect(parseStructuredImagePath('题库/01 行列式 1-基础.assets/01-1-01.png', '01-1-01.png')).toEqual({
       chapterCode: '01', chapterName: '行列式', sectionCode: '1', sectionName: '基础', questionCode: '01', kind: 'question', order: 1

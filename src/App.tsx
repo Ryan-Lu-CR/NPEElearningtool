@@ -48,6 +48,7 @@ export default function App() {
     return matchesStatus && haystack.includes(query.trim().toLowerCase())
   }), [sourceQuestions, filter, query, statuses])
   const question = filteredQuestions[Math.min(questionIndex, Math.max(0, filteredQuestions.length - 1))]
+  const questionText = question?.type === '图片题' && question.text === `第 ${question.number} 题` ? '' : question?.text
   const counts = allQuestions.reduce((acc, q) => { const s = statuses[q.id] || 'none'; acc[s]++; return acc }, { none: 0, proficient: 0, vague: 0, wrong: 0 })
 
   function selectBank(next: QuestionBank) {
@@ -117,14 +118,9 @@ export default function App() {
             if (!chapter) { chapter = { id: chapterId, name: definition.chapterName, sections: [] }; clone.chapters.push(chapter) }
             let targetSection = chapter.sections.find(entry => entry.id === sectionIdForImport)
             if (!targetSection) { targetSection = { id: sectionIdForImport, name: definition.sectionName, questions: [] }; chapter.sections.push(targetSection) }
-            if (!targetSection.questions.some(entry => entry.id === questionId)) targetSection.questions.push({
-              id: questionId,
-              number: Number(definition.questionCode),
-              type: '图片题',
-              text: `第 ${Number(definition.questionCode)} 题`,
-              answer: '见答案图片',
-              analysis: '暂无文字解析'
-            })
+            const existingQuestion = targetSection.questions.find(entry => entry.id === questionId)
+            if (!existingQuestion) targetSection.questions.push({ id: questionId, number: Number(definition.questionCode), type: '图片题', text: '', answer: '见答案图片', analysis: '暂无文字解析' })
+            else if (existingQuestion.type === '图片题' && existingQuestion.text === `第 ${existingQuestion.number} 题`) existingQuestion.text = ''
             targetSection.questions.sort((a, b) => a.number - b.number)
           }
           clone.chapters.sort((a, b) => a.id.localeCompare(b.id, 'zh-CN', { numeric: true }))
@@ -205,7 +201,7 @@ export default function App() {
         {question ? <div className="study-layout">
           <section className="question-card">
             <div className="question-top"><div><span className="number">{String(question.number).padStart(2,'0')}</span><span className="type">{question.type}</span></div><span className={`current-status ${(statuses[question.id] || 'none')}`}>{statusMeta[statuses[question.id] || 'none'].icon} {statusMeta[statuses[question.id] || 'none'].label}</span></div>
-            <div className="question-content"><p>{question.text}</p><AssetGallery keys={question.imageKeys} urls={question.imageUrl ? [question.imageUrl] : []} alt="题目配图"/>{question.options && <div className="options">{question.options.map((o, i) => <div key={i}>{o}</div>)}</div>}</div>
+            <div className="question-content">{questionText && <p>{questionText}</p>}<AssetGallery keys={question.imageKeys} urls={question.imageUrl ? [question.imageUrl] : []} alt="题目配图"/>{question.options && <div className="options">{question.options.map((o, i) => <div key={i}>{o}</div>)}</div>}</div>
             <div className="status-bar"><span>掌握情况</span><div>{(['proficient','vague','wrong'] as const).map(s => <button key={s} className={(statuses[question.id] || 'none') === s ? `status-button ${s} active` : `status-button ${s}`} onClick={() => mark((statuses[question.id] || 'none') === s ? 'none' : s)}><b>{statusMeta[s].icon}</b>{statusMeta[s].label}</button>)}</div></div>
             <button className="answer-toggle" onClick={() => setAnswerOpen(v => !v)}><CircleHelp size={19}/>{answerOpen ? '收起答案与解析' : '查看答案与解析'}<ChevronDown className={answerOpen ? 'rotated' : ''} size={18}/></button>
             {answerOpen && <div className="answer"><div><span>参考答案</span><strong>{question.answer}</strong></div><div><span>解题思路</span><p>{question.analysis}</p><AssetGallery keys={question.answerImageKeys} urls={question.answerImageUrl ? [question.answerImageUrl] : []} alt="答案配图"/></div>{question.videoUrl && <a href={question.videoUrl} target="_blank" rel="noreferrer">观看视频解析 →</a>}</div>}
@@ -217,7 +213,7 @@ export default function App() {
         {printMode && <section className="print-sheet" aria-hidden="true">
           <div className="print-title"><h1>{view === 'wrong' ? '全局错题本' : bank.name}</h1><p>{view === 'wrong' ? `共 ${wrongQuestions.length} 道错题` : `${bank.chapters.find(c => c.sections.some(s => s.id === sectionId))?.name} · ${section?.name}`}</p></div>
           {sourceQuestions.map(q => <article key={q.id} className="print-question">
-            <h2>{q.number}. {q.text}</h2>
+            <h2>{q.number}.{q.type === '图片题' && q.text === `第 ${q.number} 题` ? '' : ` ${q.text}`}</h2>
             {q.options?.map(option => <p key={option}>{option}</p>)}
             <AssetGallery keys={q.imageKeys} urls={q.imageUrl ? [q.imageUrl] : []} alt="题目配图"/>
             <div className="print-answer"><strong>答案：{q.answer}</strong><p>解析：{q.analysis}</p><AssetGallery keys={q.answerImageKeys} urls={q.answerImageUrl ? [q.answerImageUrl] : []} alt="答案配图"/></div>
@@ -227,6 +223,6 @@ export default function App() {
     </div>
     {toast && <div className="toast">{toast}</div>}
     {newBankOpen && <div className="modal-backdrop" onClick={() => setNewBankOpen(false)}><section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="new-bank-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setNewBankOpen(false)}><X/></button><span className="modal-icon"><BookOpen/></span><h2 id="new-bank-title">新建题库</h2><p>先起一个名字，再点击顶部“图片”选择素材目录，章节和题目会自动生成。</p><label>题库名称<input autoFocus value={newBankName} onChange={event => setNewBankName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') createBank() }} placeholder="例如：线性代数强化题"/></label><button className="primary-button" onClick={createBank}>创建并开始导入</button></section></div>}
-    {namingHelpOpen && <div className="modal-backdrop" onClick={() => setNamingHelpOpen(false)}><section className="modal-card naming-card" role="dialog" aria-modal="true" aria-labelledby="naming-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setNamingHelpOpen(false)}><X/></button><span className="modal-icon"><FileImage/></span><h2 id="naming-title">图片命名参考</h2><p>兼容你现有的三段数字格式：章号－小节号－题号。</p><div className="naming-example"><code>01-1-01.png</code><span>第 01 章 / 第 1 节 / 第 01 题，默认题目图</span><code>01-1-01-Q-2.png</code><span>同一题的第 2 张题目图</span><code>01-1-01-A-1.png</code><span>同一题的第 1 张答案图</span><code>01-1-01-A-2.png</code><span>同一题的第 2 张答案图</span></div><h3>文件夹也能自动识别名称</h3><code className="folder-example">01 行列式 1-基础.assets</code><p>自动生成“行列式”章节和“基础”小节。Q 表示题目，A 表示答案；编号可继续增加，没有数量限制。</p><button className="primary-button" onClick={() => setNamingHelpOpen(false)}>我知道了</button></section></div>}
+    {namingHelpOpen && <div className="modal-backdrop" onClick={() => setNamingHelpOpen(false)}><section className="modal-card naming-card" role="dialog" aria-modal="true" aria-labelledby="naming-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setNamingHelpOpen(false)}><X/></button><span className="modal-icon"><FileImage/></span><h2 id="naming-title">图片命名参考</h2><p>Q 表示题目，A 表示答案；后面依次是章号－小节号－题号。</p><div className="naming-example"><code>Q-01-1-01.png</code><span>单张题目图</span><code>Q-01-1-01.1.png</code><span>多图组成时的第 1 张</span><code>Q-01-1-01.2.png</code><span>多图组成时的第 2 张</span><code>A-01-1-01.png</code><span>单张答案图</span><code>A-01-1-01.1.png</code><span>多张答案中的第 1 张</span><code>A-01-1-01.2.png</code><span>多张答案中的第 2 张</span></div><h3>文件夹自动识别名称</h3><code className="folder-example">01 行列式 1-基础.assets</code><p>自动生成“行列式”章节和“基础”小节。旧的 <code>01-1-01.png</code> 仍可识别为题目图。</p><button className="primary-button" onClick={() => setNamingHelpOpen(false)}>我知道了</button></section></div>}
   </div>
 }

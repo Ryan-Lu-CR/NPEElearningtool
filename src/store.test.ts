@@ -45,6 +45,12 @@ describe('validateBanks', () => {
     expect(question.imageKeys).toHaveLength(2)
     expect(question.answerImageKeys).toHaveLength(3)
   })
+
+  it('允许纯图片题不显示重复的占位正文', () => {
+    const imageOnly = structuredClone(validBank)
+    Object.assign(imageOnly.chapters[0].sections[0].questions[0], { type: '图片题', text: '', imageKeys: ['q/1'] })
+    expect(validateBanks([imageOnly])[0].chapters[0].sections[0].questions[0].text).toBe('')
+  })
 })
 
 describe('local storage recovery', () => {

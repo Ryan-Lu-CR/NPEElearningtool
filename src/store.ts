@@ -79,17 +79,23 @@ export function validateBanks(value: unknown): QuestionBank[] {
                 if (!Number.isFinite(rawQuestion.number)) throw new Error(`${questionPath}.number 必须是数字`)
                 if (rawQuestion.options !== undefined && (!Array.isArray(rawQuestion.options) || rawQuestion.options.some(option => typeof option !== 'string')))
                   throw new Error(`${questionPath}.options 必须是文本数组`)
+                const type = requiredString(rawQuestion.type, `${questionPath}.type`)
+                const imageUrl = optionalString(rawQuestion.imageUrl, `${questionPath}.imageUrl`)
+                const imageKeys = optionalStringArray(rawQuestion.imageKeys, `${questionPath}.imageKeys`)
+                const text = typeof rawQuestion.text === 'string' && rawQuestion.text.trim() === '' && (type === '图片题' || imageUrl || imageKeys?.length)
+                  ? ''
+                  : requiredString(rawQuestion.text, `${questionPath}.text`)
                 return {
                   id: uniqueId(rawQuestion.id, `${questionPath}.id`),
                   number: rawQuestion.number as number,
-                  type: requiredString(rawQuestion.type, `${questionPath}.type`),
-                  text: requiredString(rawQuestion.text, `${questionPath}.text`),
+                  type,
+                  text,
                   options: rawQuestion.options as string[] | undefined,
                   answer: requiredString(rawQuestion.answer, `${questionPath}.answer`),
                   analysis: requiredString(rawQuestion.analysis, `${questionPath}.analysis`),
-                  imageUrl: optionalString(rawQuestion.imageUrl, `${questionPath}.imageUrl`),
+                  imageUrl,
                   answerImageUrl: optionalString(rawQuestion.answerImageUrl, `${questionPath}.answerImageUrl`),
-                  imageKeys: optionalStringArray(rawQuestion.imageKeys, `${questionPath}.imageKeys`),
+                  imageKeys,
                   answerImageKeys: optionalStringArray(rawQuestion.answerImageKeys, `${questionPath}.answerImageKeys`),
                   videoUrl: optionalString(rawQuestion.videoUrl, `${questionPath}.videoUrl`)
                 }

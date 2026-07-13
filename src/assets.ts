@@ -57,7 +57,11 @@ export interface StructuredImageMatch {
 
 export function parseStructuredImagePath(relativePath: string, filename: string): StructuredImageMatch | null {
   const basename = filename.replace(/\.[^.]+$/, '')
-  const fileMatch = basename.match(/^(\d+)-(\d+)-(\d+)(?:-(Q|A|题目|答案))?(?:-(\d+))?$/i)
+  const prefixedMatch = basename.match(/^(Q|A)-(\d+)-(\d+)-(\d+)(?:\.(\d+))?$/i)
+  const legacyMatch = basename.match(/^(\d+)-(\d+)-(\d+)(?:-(Q|A|题目|答案))?(?:-(\d+))?$/i)
+  const fileMatch = prefixedMatch
+    ? [prefixedMatch[0], prefixedMatch[2], prefixedMatch[3], prefixedMatch[4], prefixedMatch[1], prefixedMatch[5]]
+    : legacyMatch
   if (!fileMatch) return null
   const [, chapterCode, sectionCode, questionCode, kindToken, orderToken] = fileMatch
   const folders = relativePath.split('/').slice(0, -1)
