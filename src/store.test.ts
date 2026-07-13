@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { loadBanks, loadStatuses, renameBank, renameChapter, saveBanks, saveStatuses, validateBanks, validateStatuses } from './store'
+import { loadBanks, loadNavigation, loadStatuses, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, validateBanks, validateStatuses } from './store'
 
 class MemoryStorage {
   private data = new Map<string, string>()
@@ -91,5 +91,17 @@ describe('rename', () => {
     expect(renamed[0].chapters[0].name).toBe('极限专题')
     expect(renamed[0].chapters[0].id).toBe('chapter-1')
     expect(renamed[0].chapters[0].sections[0].id).toBe('section-1')
+  })
+})
+
+describe('navigation recovery', () => {
+  it('保存并恢复最后学习位置', () => {
+    saveNavigation({ bankId: 'bank-1', sectionId: 'section-1', questionId: 'question-1', view: 'section' })
+    expect(loadNavigation()).toEqual({ bankId: 'bank-1', sectionId: 'section-1', questionId: 'question-1', view: 'section' })
+  })
+
+  it('损坏的位置记录会被安全忽略', () => {
+    localStorage.setItem('npee:navigation:v1', JSON.stringify({ bankId: 1, sectionId: null }))
+    expect(loadNavigation()).toBeNull()
   })
 })

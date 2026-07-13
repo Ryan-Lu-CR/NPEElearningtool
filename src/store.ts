@@ -3,6 +3,7 @@ import { sampleBanks } from './data'
 
 const BANKS_KEY = 'npee:banks:v1'
 const STATUS_KEY = 'npee:status:v1'
+const NAVIGATION_KEY = 'npee:navigation:v1'
 const VALID_STATUSES = new Set<QuestionStatus>(['none', 'proficient', 'vague', 'wrong'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -36,6 +37,23 @@ export function loadStatuses(): Record<string, QuestionStatus> {
   } catch { return {} }
 }
 export function saveStatuses(statuses: Record<string, QuestionStatus>) { localStorage.setItem(STATUS_KEY, JSON.stringify(statuses)) }
+
+export interface NavigationState {
+  bankId: string
+  sectionId: string
+  questionId: string
+  view: 'section' | 'wrong'
+}
+
+export function loadNavigation(): NavigationState | null {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(NAVIGATION_KEY) || 'null')
+    if (!isRecord(value) || typeof value.bankId !== 'string' || typeof value.sectionId !== 'string' || typeof value.questionId !== 'string') return null
+    return { bankId: value.bankId, sectionId: value.sectionId, questionId: value.questionId, view: value.view === 'wrong' ? 'wrong' : 'section' }
+  } catch { return null }
+}
+
+export function saveNavigation(value: NavigationState) { localStorage.setItem(NAVIGATION_KEY, JSON.stringify(value)) }
 
 export function renameBank(banks: QuestionBank[], bankId: string, name: string) {
   const trimmed = name.trim()

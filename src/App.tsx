@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, BookOpen, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, Menu, Pencil, Plus, RotateCcw, Search, X } from 'lucide-react'
 import type { Question, QuestionBank, QuestionStatus, Section } from './types'
-import { loadBanks, loadStatuses, renameBank, renameChapter, saveBanks, saveStatuses, validateBanks, validateStatuses } from './store'
+import { loadBanks, loadNavigation, loadStatuses, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, validateBanks, validateStatuses } from './store'
 import { parseImageFilename, parseStructuredImagePath, putAssets, type StructuredImageMatch } from './assets'
 import AssetGallery from './AssetGallery'
 import ExportDialog, { ExportPage, type ExportJob } from './ExportDialog'
@@ -30,11 +30,27 @@ export default function App() {
   const [namingHelpOpen, setNamingHelpOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{ kind: 'bank' | 'chapter'; id: string; name: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [navigationReady, setNavigationReady] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
   const imageImportRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => saveBanks(banks), [banks])
   useEffect(() => saveStatuses(statuses), [statuses])
+  useEffect(() => {
+    const saved = loadNavigation()
+    if (saved) {
+      const savedBank = banks.find(item => item.id === saved.bankId)
+      const savedSection = savedBank?.chapters.flatMap(chapter => chapter.sections).find(item => item.id === saved.sectionId)
+      if (savedBank && savedSection) {
+        const savedQuestions = saved.view === 'wrong'
+          ? banks.flatMap(item => item.chapters.flatMap(chapter => chapter.sections.flatMap(item => item.questions))).filter(item => statuses[item.id] === 'wrong')
+          : savedSection.questions
+        setBankId(savedBank.id); setSectionId(savedSection.id); setView(saved.view)
+        setQuestionIndex(Math.max(0, savedQuestions.findIndex(item => item.id === saved.questionId)))
+      }
+    }
+    setNavigationReady(true)
+  }, [])
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 2600); return () => clearTimeout(timer) }, [toast])
   useEffect(() => {
     const finishPrinting = () => { setPrintMode(false); setPrintJob(null) }
@@ -55,6 +71,11 @@ export default function App() {
   const question = filteredQuestions[Math.min(questionIndex, Math.max(0, filteredQuestions.length - 1))]
   const questionText = question?.type === '图片题' && question.text === `第 ${question.number} 题` ? '' : question?.text
   const counts = allQuestions.reduce((acc, q) => { const s = statuses[q.id] || 'none'; acc[s]++; return acc }, { none: 0, proficient: 0, vague: 0, wrong: 0 })
+
+  useEffect(() => {
+    if (!navigationReady) return
+    saveNavigation({ bankId: bank?.id || '', sectionId, questionId: question?.id || '', view })
+  }, [navigationReady, bank?.id, sectionId, question?.id, view])
 
   function selectBank(next: QuestionBank) {
     setBankId(next.id); setSectionId(next.chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setAnswerOpen(false); setView('section'); setSidebar(false)
@@ -173,7 +194,7 @@ export default function App() {
     <header>
       <button className="mobile-menu" onClick={() => setSidebar(true)} aria-label="打开菜单"><Menu/></button>
       <div className="brand"><span className="brand-mark"><BookOpen size={20}/></span><div><strong>本地题库</strong><small>QUESTION BANK</small></div></div>
-      <div className="header-center"><span className="source-dot"/>本地增强模式 · 数据仅保存在此设备</div>
+      <div className="header-center"><span className="source-dot"/>本地增强模式 · 数据与位置自动保存</div>
       <div className="header-actions">
         <input ref={importRef} hidden type="file" accept=".json,application/json" onChange={e => importData(e.target.files?.[0])}/>
         <input ref={node => { imageImportRef.current = node; node?.setAttribute('webkitdirectory', '') }} hidden type="file" multiple accept="image/*" onChange={e => importImages(e.target.files)}/>
