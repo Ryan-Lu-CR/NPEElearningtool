@@ -4,6 +4,7 @@ import type { Question, QuestionBank, QuestionStatus, Section } from './types'
 import { loadBanks, loadStatuses, saveBanks, saveStatuses, validateBanks, validateStatuses } from './store'
 import { parseImageFilename, parseStructuredImagePath, putAssets, type StructuredImageMatch } from './assets'
 import AssetGallery from './AssetGallery'
+import ExportDialog, { ExportPage, type ExportJob } from './ExportDialog'
 
 const statusMeta: Record<QuestionStatus, { label: string; icon: string }> = {
   none: { label: '未标记', icon: '○' }, proficient: { label: '熟练', icon: '✓' }, vague: { label: '模糊', icon: '?' }, wrong: { label: '错题', icon: '×' }
@@ -22,6 +23,8 @@ export default function App() {
   const [view, setView] = useState<'section' | 'wrong'>('section')
   const [toast, setToast] = useState('')
   const [printMode, setPrintMode] = useState(false)
+  const [printJob, setPrintJob] = useState<ExportJob | null>(null)
+  const [exportOpen, setExportOpen] = useState(false)
   const [newBankOpen, setNewBankOpen] = useState(false)
   const [newBankName, setNewBankName] = useState('')
   const [namingHelpOpen, setNamingHelpOpen] = useState(false)
@@ -32,7 +35,7 @@ export default function App() {
   useEffect(() => saveStatuses(statuses), [statuses])
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 2600); return () => clearTimeout(timer) }, [toast])
   useEffect(() => {
-    const finishPrinting = () => setPrintMode(false)
+    const finishPrinting = () => { setPrintMode(false); setPrintJob(null) }
     window.addEventListener('afterprint', finishPrinting)
     return () => window.removeEventListener('afterprint', finishPrinting)
   }, [])
@@ -64,8 +67,9 @@ export default function App() {
     const blob = new Blob([JSON.stringify({ version: 1, banks, statuses }, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `研途题库备份-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url)
   }
-  function printSection() {
-    if (!sourceQuestions.length) { setToast('当前视图没有可导出的题目'); return }
+  function printExport(job: ExportJob) {
+    if (!job.questions.length) { setToast('当前条件下没有可导出的题目'); return }
+    setPrintJob(job); setExportOpen(false)
     setToast('正在打开打印预览，可选择“另存为 PDF”')
     setPrintMode(true)
     setTimeout(() => window.print(), 500)
@@ -167,7 +171,7 @@ export default function App() {
         <button className="ghost" onClick={() => importRef.current?.click()}><FileUp size={17}/>导入</button>
         <button className="ghost" title="批量导入题目图和答案图" onClick={() => imageImportRef.current?.click()}><FileImage size={17}/>图片</button>
         <button className="icon-ghost" title="查看图片命名参考" aria-label="图片命名参考" onClick={() => setNamingHelpOpen(true)}><CircleHelp size={18}/></button>
-        <button className="ghost" onClick={printSection}><FileText size={17}/>PDF</button>
+        <button className="ghost" onClick={() => setExportOpen(true)}><FileText size={17}/>导出</button>
         <button className="ghost" onClick={exportData}><Download size={17}/>备份</button>
       </div>
     </header>
@@ -210,19 +214,15 @@ export default function App() {
           <nav className="question-nav"><div><strong>题号导航</strong><small>点击快速跳转</small></div><div className="number-grid">{filteredQuestions.map((q, i) => <button key={q.id} className={`${i === questionIndex ? 'selected ' : ''}${statuses[q.id] || 'none'}`} onClick={() => { setQuestionIndex(i); setAnswerOpen(false) }}>{q.number}</button>)}</div><div className="legend"><span><i/>未标记</span><span><i className="green"/>熟练</span><span><i className="yellow"/>模糊</span><span><i className="red"/>错题</span></div></nav>
         </div> : <div className="no-results"><Search size={32}/><h2>{view === 'wrong' && wrongQuestions.length === 0 ? '错题已经清空' : '没有符合条件的题目'}</h2><p>{view === 'wrong' && wrongQuestions.length === 0 ? '很好，继续练习其他章节巩固掌握情况。' : '尝试更换筛选条件或清空搜索词。'}</p><button onClick={() => view === 'wrong' && wrongQuestions.length === 0 ? setView('section') : (setFilter('all'), setQuery(''))}><RotateCcw size={16}/>{view === 'wrong' && wrongQuestions.length === 0 ? '返回当前小节' : '重置筛选'}</button></div>}
 
-        {printMode && <section className="print-sheet" aria-hidden="true">
-          <div className="print-title"><h1>{view === 'wrong' ? '全局错题本' : bank.name}</h1><p>{view === 'wrong' ? `共 ${wrongQuestions.length} 道错题` : `${bank.chapters.find(c => c.sections.some(s => s.id === sectionId))?.name} · ${section?.name}`}</p></div>
-          {sourceQuestions.map(q => <article key={q.id} className="print-question">
-            <h2>{q.number}.{q.type === '图片题' && q.text === `第 ${q.number} 题` ? '' : ` ${q.text}`}</h2>
-            {q.options?.map(option => <p key={option}>{option}</p>)}
-            <AssetGallery keys={q.imageKeys} urls={q.imageUrl ? [q.imageUrl] : []} alt="题目配图"/>
-            <div className="print-answer"><strong>答案：{q.answer}</strong><p>解析：{q.analysis}</p><AssetGallery keys={q.answerImageKeys} urls={q.answerImageUrl ? [q.answerImageUrl] : []} alt="答案配图"/></div>
-          </article>)}
+        {printMode && printJob && <section className="print-sheet" aria-hidden="true">
+          <div className="print-title"><h1>{printJob.title}</h1><p>{printJob.subtitle}</p></div>
+          {Array.from({ length: Math.ceil(printJob.questions.length / printJob.perPage) }, (_, index) => <ExportPage key={index} questions={printJob.questions.slice(index * printJob.perPage, (index + 1) * printJob.perPage)} includeAnswers={printJob.includeAnswers} pageNumber={index + 1}/>) }
         </section>}
       </main>
     </div>
     {toast && <div className="toast">{toast}</div>}
     {newBankOpen && <div className="modal-backdrop" onClick={() => setNewBankOpen(false)}><section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="new-bank-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setNewBankOpen(false)}><X/></button><span className="modal-icon"><BookOpen/></span><h2 id="new-bank-title">新建题库</h2><p>先起一个名字，再点击顶部“图片”选择素材目录，章节和题目会自动生成。</p><label>题库名称<input autoFocus value={newBankName} onChange={event => setNewBankName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') createBank() }} placeholder="例如：线性代数强化题"/></label><button className="primary-button" onClick={createBank}>创建并开始导入</button></section></div>}
     {namingHelpOpen && <div className="modal-backdrop" onClick={() => setNamingHelpOpen(false)}><section className="modal-card naming-card" role="dialog" aria-modal="true" aria-labelledby="naming-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setNamingHelpOpen(false)}><X/></button><span className="modal-icon"><FileImage/></span><h2 id="naming-title">图片命名参考</h2><p>Q 表示题目，A 表示答案；后面依次是章号－小节号－题号。</p><div className="naming-example"><code>Q-01-1-01.png</code><span>单张题目图</span><code>Q-01-1-01.1.png</code><span>多图组成时的第 1 张</span><code>Q-01-1-01.2.png</code><span>多图组成时的第 2 张</span><code>A-01-1-01.png</code><span>单张答案图</span><code>A-01-1-01.1.png</code><span>多张答案中的第 1 张</span><code>A-01-1-01.2.png</code><span>多张答案中的第 2 张</span></div><h3>文件夹自动识别名称</h3><code className="folder-example">01 行列式 1-基础.assets</code><p>自动生成“行列式”章节和“基础”小节。旧的 <code>01-1-01.png</code> 仍可识别为题目图。</p><button className="primary-button" onClick={() => setNamingHelpOpen(false)}>我知道了</button></section></div>}
+    {exportOpen && <ExportDialog banks={banks} statuses={statuses} defaultBankId={bank.id} defaultSectionId={sectionId} onClose={() => setExportOpen(false)} onPdf={printExport} onNotice={setToast}/>}
   </div>
 }
