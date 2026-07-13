@@ -3,7 +3,7 @@
     "target": "ES2022", "useDefineForClassFields": true, "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "allowJs": false, "skipLibCheck": true, "esModuleInterop": true, "allowSyntheticDefaultImports": true,
     "strict": true, "forceConsistentCasingInFileNames": true, "module": "ESNext", "moduleResolution": "Bundler",
-    "resolveJsonModule": true, "allowArbitraryExtensions": true, "isolatedModules": true, "noEmit": true, "jsx": "react-jsx"
+    "resolveJsonModule": true, "allowArbitraryExtensions": true, "types": ["vite/client"], "isolatedModules": true, "noEmit": true, "jsx": "react-jsx"
   },
   "include": ["src"]
 }

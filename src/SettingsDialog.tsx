@@ -6,6 +6,7 @@ interface Props {
   banks: QuestionBank[]
   activeBankId: string
   builtInIds: Set<string>
+  protectedBankIds: Set<string>
   onClose: () => void
   onClearMarks: (bankId: string | 'all', status: QuestionStatus | 'all') => void
   onExportBank: (bank: QuestionBank) => void
@@ -40,12 +41,12 @@ export default function SettingsDialog(props: Props) {
 
       <section className="settings-section">
         <div className="settings-section-title"><HardDrive/><div><h3>题库数据</h3><p>导出、重置或删除单个题库</p></div></div>
-        <div className="settings-bank-list">{props.banks.map(bank => <div className="settings-bank" key={bank.id}><div><strong>{bank.name}</strong><span>{bank.chapters.length} 章 · {questionCount(bank)} 题 · {props.builtInIds.has(bank.id) ? '内置' : '自建'}</span></div><div><button aria-label={`导出 ${bank.name}`} onClick={() => props.onExportBank(bank)}><Download/></button><button aria-label={`重置 ${bank.name}`} onClick={() => setPending({ title: `重置“${bank.name}”？`, description: props.builtInIds.has(bank.id) ? '将恢复内置题库的初始内容，并清除该题库的标注和本地图片。' : '将保留题库名称，但清空全部章节、题目、标注和本地图片。', run: () => props.onResetBank(bank) })}><RotateCcw/></button><button className="danger-icon" aria-label={`删除 ${bank.name}`} disabled={props.banks.length <= 1} onClick={() => setPending({ title: `删除“${bank.name}”？`, description: '该题库的章节、题目、标注和本地图片都将永久删除。', run: () => props.onDeleteBank(bank) })}><Trash2/></button></div></div>)}</div>
+        <div className="settings-bank-list">{props.banks.map(bank => <div className="settings-bank" key={bank.id}><div><strong>{bank.name}</strong><span>{bank.chapters.length} 章 · {questionCount(bank)} 题 · {props.protectedBankIds.has(bank.id) ? '默认' : props.builtInIds.has(bank.id) ? '内置' : '自建'}</span></div><div><button aria-label={`导出 ${bank.name}`} onClick={() => props.onExportBank(bank)}><Download/></button>{!props.protectedBankIds.has(bank.id) && <><button aria-label={`重置 ${bank.name}`} onClick={() => setPending({ title: `重置“${bank.name}”？`, description: props.builtInIds.has(bank.id) ? '将恢复内置题库的初始内容，并清除该题库的标注和本地图片。' : '将保留题库名称，但清空全部章节、题目、标注和本地图片。', run: () => props.onResetBank(bank) })}><RotateCcw/></button><button className="danger-icon" aria-label={`删除 ${bank.name}`} disabled={props.banks.length <= 1} onClick={() => setPending({ title: `删除“${bank.name}”？`, description: '该题库的章节、题目、标注和本地图片都将永久删除。', run: () => props.onDeleteBank(bank) })}><Trash2/></button></>}</div></div>)}</div>
       </section>
 
       <section className="settings-section settings-global">
         <div className="storage-row"><div><strong>浏览器本地存储</strong><span>已用 {formatBytes(storage.usage)} / 可用配额 {formatBytes(storage.quota)}</span></div><div className="storage-bar"><i style={{ width: `${Math.min(100, ((storage.usage || 0) / (storage.quota || 1)) * 100)}%` }}/></div></div>
-        <div className="global-actions"><button onClick={() => setPending({ title: '恢复内置题库？', description: '两个内置示例题库将恢复到初始内容，自建题库不会受到影响。', run: props.onRestoreBuiltIns })}><RefreshCcw/>恢复内置题库</button><button className="danger-action" onClick={() => setPending({ title: '恢复出厂设置？', description: '所有自建题库、图片、学习标注和位置记录都将永久删除。', run: props.onFactoryReset })}><Trash2/>清空全部并恢复出厂</button></div>
+        <div className="global-actions"><button onClick={() => setPending({ title: '恢复内置题库？', description: '内置示例题库将恢复到初始内容，自建题库不会受到影响。', run: props.onRestoreBuiltIns })}><RefreshCcw/>恢复内置题库</button><button className="danger-action" onClick={() => setPending({ title: '恢复出厂设置？', description: '默认题库会保留；其他自建题库、图片、学习标注和位置记录都将永久删除。', run: props.onFactoryReset })}><Trash2/>清空全部并恢复出厂</button></div>
       </section>
 
       {pending && <div className="settings-confirm"><div><strong>{pending.title}</strong><p>{pending.description}</p></div><div><button onClick={() => setPending(null)} disabled={busy}>取消</button><button className="confirm-danger" onClick={confirmAction} disabled={busy}>{busy ? '处理中…' : '确认执行'}</button></div></div>}

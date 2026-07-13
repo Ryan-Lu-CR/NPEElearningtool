@@ -1,19 +1,40 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, BookOpen, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, FolderOpen, FolderSync, Menu, Pencil, Plus, RotateCcw, Search, Settings as SettingsIcon, X } from 'lucide-react'
-import type { Question, QuestionBank, QuestionStatus, Section } from './types'
+import type { Question, QuestionBank, QuestionStatus, ReadingQuestionType, Section } from './types'
 import { loadBanks, loadNavigation, loadStatuses, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, validateBanks, validateStatuses } from './store'
-import { clearAssets, deleteAssets } from './assets'
+import { deleteAssets } from './assets'
 import AssetGallery from './AssetGallery'
 import ExportDialog, { ExportPage, type ExportJob } from './ExportDialog'
 import SettingsDialog from './SettingsDialog'
 import { assetKeysForBank, clearQuestionStatuses, orderedQuestionEntriesForBank, questionIdsForBank, removeBank, resetBankData } from './bankManagement'
-import { sampleBanks } from './data'
+import { builtInBanks, defaultBankIds, englishBanks } from './data'
 import { mergeImageEntries } from './imageImport'
-import { chooseWorkspace, clearWorkspaceHandle, createBankFolder, hasWorkspacePermission, isMissingWorkspaceError, loadWorkspaceHandle, readDefaultWorkspace, readWorkspaceManifest, removeBankFolder, safeFolderName, scanWorkspaceImages, writeDefaultWorkspaceManifest, writeWorkspaceManifest } from './workspace'
+import { BUILTIN_ENGLISH_VERSION, chooseWorkspace, clearWorkspaceHandle, createBankFolder, hasWorkspacePermission, isMissingWorkspaceError, loadWorkspaceHandle, readDefaultWorkspace, readWorkspaceManifest, readWorkspaceUserData, removeBankFolder, safeFolderName, scanWorkspaceImages, writeDefaultWorkspaceManifest, writeDefaultWorkspaceUserData, writeWorkspaceManifest, writeWorkspaceUserData } from './workspace'
+import { formatPassageParagraphs } from './passageFormatting'
 
 const statusMeta: Record<QuestionStatus, { label: string; icon: string }> = {
   none: { label: '未标记', icon: '○' }, proficient: { label: '熟练', icon: '✓' }, vague: { label: '模糊', icon: '?' }, wrong: { label: '错题', icon: '×' }
 }
+const binaryStatusMeta: Record<QuestionStatus, { label: string; icon: string }> = {
+  none: { label: '未标记', icon: '○' }, proficient: { label: '正确', icon: '✓' }, vague: { label: '未标记', icon: '○' }, wrong: { label: '错误', icon: '×' }
+}
+const readingTypeMeta: Array<{ value: ReadingQuestionType; label: string }> = [
+  { value: 'detail', label: '细节题' },
+  { value: 'example', label: '例证题' },
+  { value: 'main-idea', label: '主旨题' },
+  { value: 'attitude', label: '态度题' },
+  { value: 'inference', label: '推断题' },
+  { value: 'vocabulary', label: '词汇题' },
+]
+const isReadingTypeQuestion = (item?: Question) => item?.type === '阅读理解 Part A'
+const isBinaryMasteryQuestion = (item?: Question) => item?.type === '完形填空' || item?.type === '阅读理解 Part A' || item?.type === '阅读理解 Part B'
+const effectiveQuestionStatus = (item: Question | undefined, status: QuestionStatus, binaryMode = isBinaryMasteryQuestion(item)): QuestionStatus => binaryMode && status === 'vague' ? 'none' : status
+const questionStatusMeta = (item: Question | undefined, status: QuestionStatus, binaryMode = isBinaryMasteryQuestion(item)) => binaryMode ? binaryStatusMeta[status] : statusMeta[status]
+const masteryChoices = (item?: Question, binaryMode = isBinaryMasteryQuestion(item)): QuestionStatus[] => binaryMode ? ['proficient', 'wrong'] : ['proficient', 'vague', 'wrong']
+
+type Subject = 'math' | 'english'
+const bankSubject = (item: QuestionBank): Subject => item.id.startsWith('english-') || /英语/i.test(item.name) ? 'english' : 'math'
+const protectedBankIds = new Set<string>(defaultBankIds)
 
 export default function App() {
   const [banks, setBanks] = useState(loadBanks)
@@ -22,6 +43,8 @@ export default function App() {
   const [sectionId, setSectionId] = useState(banks[0]?.chapters[0]?.sections[0]?.id || '')
   const [questionIndex, setQuestionIndex] = useState(0)
   const [answerOpen, setAnswerOpen] = useState(false)
+  const [expandedPassageAnswers, setExpandedPassageAnswers] = useState<Set<string>>(() => new Set())
+  const [expandedChapterIds, setExpandedChapterIds] = useState<Set<string>>(() => new Set(banks[0]?.chapters[0] ? [banks[0].chapters[0].id] : []))
   const [filter, setFilter] = useState<QuestionStatus | 'all'>('all')
   const [query, setQuery] = useState('')
   const [sidebar, setSidebar] = useState(false)
@@ -45,8 +68,8 @@ export default function App() {
   const importRef = useRef<HTMLInputElement>(null)
   const imageImportRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => saveBanks(banks), [banks])
-  useEffect(() => saveStatuses(statuses), [statuses])
+  useEffect(() => { if (!saveBanks(banks)) setToast('浏览器存储空间不足，题库修改尚未保存；请连接题库文件夹或先导出备份') }, [banks])
+  useEffect(() => { if (!saveStatuses(statuses)) setToast('学习标记保存失败，请先导出备份后检查浏览器存储空间') }, [statuses])
   useEffect(() => {
     loadWorkspaceHandle().then(async handle => {
       if (!handle) { await loadDefaultWorkspace(); return }
@@ -64,12 +87,22 @@ export default function App() {
     if (workspaceState !== 'connected' || !workspaceReady.current) return
     const timer = window.setTimeout(() => {
       const save = defaultWorkspaceConnected
-        ? writeDefaultWorkspaceManifest(banks, statuses, workspaceFolders)
-        : workspaceHandle ? writeWorkspaceManifest(workspaceHandle, banks, statuses, workspaceFolders) : Promise.resolve()
+        ? writeDefaultWorkspaceManifest(banks, workspaceFolders)
+        : workspaceHandle ? writeWorkspaceManifest(workspaceHandle, banks, workspaceFolders) : Promise.resolve()
       save.catch(() => setWorkspaceState('error'))
     }, 450)
     return () => window.clearTimeout(timer)
-  }, [banks, statuses, workspaceFolders, workspaceHandle, workspaceState, defaultWorkspaceConnected])
+  }, [banks, workspaceFolders, workspaceHandle, workspaceState, defaultWorkspaceConnected])
+  useEffect(() => {
+    if (workspaceState !== 'connected' || !workspaceReady.current) return
+    const timer = window.setTimeout(() => {
+      const save = defaultWorkspaceConnected
+        ? writeDefaultWorkspaceUserData(statuses)
+        : workspaceHandle ? writeWorkspaceUserData(workspaceHandle, statuses) : Promise.resolve()
+      save.catch(() => setWorkspaceState('error'))
+    }, 450)
+    return () => window.clearTimeout(timer)
+  }, [statuses, workspaceHandle, workspaceState, defaultWorkspaceConnected])
   useEffect(() => {
     const saved = loadNavigation()
     if (saved) {
@@ -79,7 +112,9 @@ export default function App() {
         const savedQuestions = saved.view === 'wrong'
           ? orderedQuestionEntriesForBank(savedBank).map(entry => entry.question).filter(item => statuses[item.id] === 'wrong')
           : savedSection.questions
+        const savedChapter = savedBank.chapters.find(chapter => chapter.sections.some(item => item.id === savedSection.id))
         setBankId(savedBank.id); setSectionId(savedSection.id); setView(saved.view)
+        if (savedChapter) setExpandedChapterIds(new Set([savedChapter.id]))
         setQuestionIndex(Math.max(0, savedQuestions.findIndex(item => item.id === saved.questionId)))
       }
     }
@@ -93,20 +128,39 @@ export default function App() {
   }, [])
 
   const bank = banks.find(b => b.id === bankId) || banks[0]
+  const subject = bankSubject(bank)
+  const subjectBanks = banks.filter(item => bankSubject(item) === subject)
   const section: Section | undefined = bank?.chapters.flatMap(c => c.sections).find(s => s.id === sectionId)
   const bankQuestionEntries = useMemo(() => orderedQuestionEntriesForBank(bank), [bank])
   const wrongEntries = useMemo(() => bankQuestionEntries.filter(entry => statuses[entry.question.id] === 'wrong'), [bankQuestionEntries, statuses])
   const wrongQuestions = useMemo(() => wrongEntries.map(entry => entry.question), [wrongEntries])
   const sourceQuestions = view === 'wrong' ? wrongQuestions : (section?.questions || [])
+  const binaryFilterMode = subject === 'english'
+  const isPartBSection = view === 'section' && Boolean(section?.questions.length) && section!.questions.every(item => item.type === '阅读理解 Part B')
+  const sharedPartBOptions = isPartBSection ? section?.questions[0]?.options || [] : []
+  const hasLongPartBOptions = sharedPartBOptions.some(option => option.length > 180)
+  const partBOptionBankMeta = section?.partBKind === 'ordering'
+    ? { title: '待排序段落', description: '以下段落供第 41–45 题共同使用。' }
+    : section?.partBKind === 'subheading'
+      ? { title: '备选小标题', description: '以下小标题供第 41–45 题共同使用。' }
+      : section?.partBKind === 'viewpoint'
+        ? { title: '备选观点', description: '以下观点供第 41–45 题共同使用。' }
+        : { title: '备选句', description: '以下句子供第 41–45 题共同使用。' }
+  const filterOptions: Array<QuestionStatus | 'all'> = binaryFilterMode ? ['all', 'none', 'wrong', 'proficient'] : ['all', 'none', 'wrong', 'vague', 'proficient']
   const filteredQuestions = useMemo(() => sourceQuestions.filter(q => {
-    const matchesStatus = filter === 'all' || (statuses[q.id] || 'none') === filter
-    const haystack = `${q.text} ${q.answer} ${q.analysis}`.toLowerCase()
+    const matchesStatus = filter === 'all' || effectiveQuestionStatus(q, statuses[q.id] || 'none', binaryFilterMode) === filter
+    const readingLabel = readingTypeMeta.find(item => item.value === q.readingType)?.label || ''
+    const haystack = `${q.text} ${q.answer} ${q.analysis} ${readingLabel}`.toLowerCase()
     return matchesStatus && haystack.includes(query.trim().toLowerCase())
-  }), [sourceQuestions, filter, query, statuses])
+  }), [sourceQuestions, filter, query, statuses, binaryFilterMode])
   const question = filteredQuestions[Math.min(questionIndex, Math.max(0, filteredQuestions.length - 1))]
   const questionText = question && (question.type === '图片题' || question.imageUrl || question.imageKeys?.length) && question.text === `第 ${question.number} 题` ? '' : question?.text
+  const hasAnswerImages = Boolean(question?.answerImageKeys?.length || question?.answerImageUrl)
   const currentQuestionEntry = view === 'wrong' ? wrongEntries.find(entry => entry.question.id === question?.id) : undefined
-  const counts = bankQuestionEntries.reduce((acc, entry) => { const s = statuses[entry.question.id] || 'none'; acc[s]++; return acc }, { none: 0, proficient: 0, vague: 0, wrong: 0 })
+  const currentQuestionStatus = effectiveQuestionStatus(question, question ? statuses[question.id] || 'none' : 'none', binaryFilterMode)
+  const currentQuestionStatusMeta = questionStatusMeta(question, currentQuestionStatus, binaryFilterMode)
+  const counts = bankQuestionEntries.reduce((acc, entry) => { const s = effectiveQuestionStatus(entry.question, statuses[entry.question.id] || 'none', binaryFilterMode); acc[s]++; return acc }, { none: 0, proficient: 0, vague: 0, wrong: 0 })
+  const allPassageAnswersOpen = filteredQuestions.length > 0 && filteredQuestions.every(item => expandedPassageAnswers.has(item.id))
 
   useEffect(() => {
     if (!navigationReady) return
@@ -114,13 +168,63 @@ export default function App() {
   }, [navigationReady, bank?.id, sectionId, question?.id, view])
 
   function selectBank(next: QuestionBank) {
-    setBankId(next.id); setSectionId(next.chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setAnswerOpen(false); setView('section'); setSidebar(false)
+    setBankId(next.id); setSectionId(next.chapters[0]?.sections[0]?.id || ''); setExpandedChapterIds(new Set(next.chapters[0] ? [next.chapters[0].id] : [])); setQuestionIndex(0); setAnswerOpen(false); setExpandedPassageAnswers(new Set()); setFilter('all'); setView('section'); setSidebar(false)
   }
-  function selectSection(id: string) { setSectionId(id); setQuestionIndex(0); setAnswerOpen(false); setView('section'); setSidebar(false) }
-  function showWrongBook() { setView('wrong'); setFilter('all'); setQuery(''); setQuestionIndex(0); setAnswerOpen(false); setSidebar(false) }
-  function mark(status: QuestionStatus) {
-    if (!question) return
-    setStatuses(prev => ({ ...prev, [question.id]: status })); setToast(`已标记为“${statusMeta[status].label}”`)
+  function selectSubject(nextSubject: Subject) {
+    const nextBank = banks.find(item => bankSubject(item) === nextSubject)
+    if (nextBank) selectBank(nextBank)
+    else setToast(nextSubject === 'english' ? '还没有英语题库' : '还没有数学题库')
+  }
+  function selectSection(id: string) {
+    const owner = bank.chapters.find(chapter => chapter.sections.some(item => item.id === id))
+    if (owner) setExpandedChapterIds(previous => new Set(previous).add(owner.id))
+    setSectionId(id); setQuestionIndex(0); setAnswerOpen(false); setExpandedPassageAnswers(new Set()); setFilter('all'); setView('section'); setSidebar(false)
+  }
+  function toggleChapter(id: string) {
+    setExpandedChapterIds(previous => {
+      const next = new Set(previous)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  function showWrongBook() { setView('wrong'); setFilter('all'); setQuery(''); setQuestionIndex(0); setAnswerOpen(false); setExpandedPassageAnswers(new Set()); setSidebar(false) }
+  function markQuestion(questionId: string, status: QuestionStatus, targetQuestion?: Question) {
+    const item = targetQuestion || bankQuestionEntries.find(entry => entry.question.id === questionId)?.question
+    setStatuses(prev => ({ ...prev, [questionId]: status })); setToast(`已标记为“${questionStatusMeta(item, status, binaryFilterMode).label}”`)
+  }
+  function mark(status: QuestionStatus) { if (question) markQuestion(question.id, status, question) }
+  function togglePassageAnswer(questionId: string) {
+    setExpandedPassageAnswers(previous => {
+      const next = new Set(previous)
+      if (next.has(questionId)) next.delete(questionId)
+      else next.add(questionId)
+      return next
+    })
+  }
+  function toggleAllPassageAnswers() {
+    setExpandedPassageAnswers(previous => {
+      const next = new Set(previous)
+      if (allPassageAnswersOpen) filteredQuestions.forEach(item => next.delete(item.id))
+      else filteredQuestions.forEach(item => next.add(item.id))
+      return next
+    })
+  }
+  function jumpToPassageQuestion(questionId: string, index: number) {
+    setQuestionIndex(index)
+    window.requestAnimationFrame(() => document.getElementById(`question-${questionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+  function markReadingType(questionId: string, readingType: ReadingQuestionType | '') {
+    setBanks(previous => previous.map(item => ({ ...item, chapters: item.chapters.map(chapter => ({ ...chapter, sections: chapter.sections.map(itemSection => ({
+      ...itemSection,
+      questions: itemSection.questions.map(itemQuestion => itemQuestion.id === questionId
+        ? { ...itemQuestion, readingType: readingType || undefined }
+        : itemQuestion)
+    })) })) })))
+    setToast(readingType ? `已标注为“${readingTypeMeta.find(item => item.value === readingType)?.label}”` : '已清除阅读题型标注')
+  }
+  function readingTypePicker(item: Question) {
+    if (!isReadingTypeQuestion(item)) return null
+    return <label className="reading-type-picker"><span>阅读题型</span><select aria-label={`第 ${item.number} 题阅读题型`} value={item.readingType || ''} onChange={event => markReadingType(item.id, event.target.value as ReadingQuestionType | '')}><option value="">未分类</option>{readingTypeMeta.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select><ChevronDown size={13}/></label>
   }
   function exportData() {
     const blob = new Blob([JSON.stringify({ version: 1, banks, statuses }, null, 2)], { type: 'application/json' })
@@ -134,7 +238,8 @@ export default function App() {
     setStatuses(previous => clearQuestionStatuses(previous, banks, targetBankId, status)); setToast('所选标注已清除')
   }
   async function resetManagedBank(targetBank: QuestionBank) {
-    await deleteAssets(assetKeysForBank(targetBank)); const baseline = sampleBanks.find(item => item.id === targetBank.id)
+    if (protectedBankIds.has(targetBank.id)) { setToast('默认题库不能重置或清空'); return }
+    await deleteAssets(assetKeysForBank(targetBank)); const baseline = builtInBanks.find(item => item.id === targetBank.id)
     const folderName = workspaceFolders[targetBank.id]
     if (workspaceHandle && workspaceState === 'connected' && folderName) {
       await removeBankFolder(workspaceHandle, folderName).catch(() => {})
@@ -145,6 +250,7 @@ export default function App() {
     setToast(baseline ? '内置题库已恢复' : '自建题库内容已清空')
   }
   async function deleteManagedBank(targetBank: QuestionBank) {
+    if (protectedBankIds.has(targetBank.id)) { setToast('默认题库不能删除'); return }
     if (banks.length <= 1) { setToast('至少需要保留一个题库'); return }
     await deleteAssets(assetKeysForBank(targetBank)); const ids = questionIdsForBank(targetBank)
     const folderName = workspaceFolders[targetBank.id]
@@ -155,12 +261,16 @@ export default function App() {
     if (bankId === targetBank.id) selectBank(remaining[0]); setToast(`已删除“${targetBank.name}”`)
   }
   async function restoreBuiltIns() {
-    const builtInIds = new Set(sampleBanks.map(item => item.id)); const existingBuiltIns = banks.filter(item => builtInIds.has(item.id))
+    const builtInIds = new Set(builtInBanks.map(item => item.id)); const existingBuiltIns = banks.filter(item => builtInIds.has(item.id))
     await deleteAssets(existingBuiltIns.flatMap(assetKeysForBank)); setStatuses(previous => existingBuiltIns.reduce((next, item) => clearQuestionStatuses(next, banks, item.id, 'all'), previous))
-    setBanks(previous => [...previous.filter(item => !builtInIds.has(item.id)), ...structuredClone(sampleBanks)]); setToast('内置题库已恢复')
+    setBanks(previous => [...previous.filter(item => !builtInIds.has(item.id)), ...structuredClone(builtInBanks)]); setToast('内置题库已恢复')
   }
   async function factoryReset() {
-    await clearAssets(); const defaults = structuredClone(sampleBanks); setBanks(defaults); setStatuses({}); setBankId(defaults[0].id); setSectionId(defaults[0].chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setView('section'); setSettingsOpen(false); setToast('已恢复出厂设置')
+    const protectedBanks = banks.filter(item => protectedBankIds.has(item.id))
+    const removableBanks = banks.filter(item => !protectedBankIds.has(item.id))
+    await deleteAssets(removableBanks.flatMap(assetKeysForBank))
+    const defaults = [...structuredClone(protectedBanks), ...structuredClone(builtInBanks).filter(item => !protectedBankIds.has(item.id))]
+    setBanks(defaults); setStatuses({}); setBankId(defaults[0].id); setSectionId(defaults[0].chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setView('section'); setSettingsOpen(false); setToast('已恢复出厂设置，默认题库已保留')
   }
   function printExport(job: ExportJob) {
     if (!job.questions.length) { setToast('当前条件下没有可导出的题目'); return }
@@ -196,8 +306,13 @@ export default function App() {
     setWorkspaceState('syncing')
     try {
       const index = await readDefaultWorkspace()
-      const nextBanks = index.manifest ? validateBanks(index.manifest) : structuredClone(banks)
-      const nextStatuses = index.manifest?.statuses ? validateStatuses(index.manifest.statuses) : statuses
+      let nextBanks = index.manifest ? validateBanks(index.manifest) : structuredClone(banks)
+      if (index.manifest && index.manifest.builtinEnglishVersion !== BUILTIN_ENGLISH_VERSION) {
+        const englishIds = new Set(englishBanks.map(bank => bank.id))
+        nextBanks = [...nextBanks.filter(bank => !englishIds.has(bank.id)), ...structuredClone(englishBanks)]
+      }
+      const storedStatuses = index.userData?.statuses || index.manifest?.statuses
+      const nextStatuses = storedStatuses ? validateStatuses(storedStatuses) : statuses
       const folders = { ...(index.manifest?.folders || {}) }
       for (const folderName of new Set(index.images.map(item => item.bankFolder).filter(Boolean))) {
         let target = nextBanks.find(item => folders[item.id] === folderName || safeFolderName(item.name) === folderName)
@@ -211,10 +326,18 @@ export default function App() {
         const target = item.bankFolder ? nextBanks.find(bank => folders[bank.id] === item.bankFolder) : nextBanks[0]
         return { file: new File([], item.name), relativePath: item.relativePath, bankId: target!.id, assetUrl: item.url }
       })
-      const result = await mergeImageEntries(nextBanks, entries)
+      const result = await mergeImageEntries(nextBanks, entries, { replaceExistingAssets: true })
+      const activeBank = result.banks.find(item => item.id === bankId) || result.banks[0]
+      const activeSections = activeBank?.chapters.flatMap(chapter => chapter.sections) || []
+      if (activeBank && !activeSections.some(item => item.id === sectionId)) {
+        setBankId(activeBank.id); setSectionId(activeSections[0]?.id || ''); setQuestionIndex(0)
+      }
       workspaceReady.current = false
       setBanks(result.banks); setStatuses(nextStatuses); setWorkspaceFolders(folders); setWorkspaceHandle(null); setDefaultWorkspaceConnected(true); setWorkspaceState('connected')
-      window.setTimeout(() => { workspaceReady.current = true; writeDefaultWorkspaceManifest(result.banks, nextStatuses, folders).catch(() => setWorkspaceState('error')) }, 0)
+      window.setTimeout(() => {
+        workspaceReady.current = true
+        Promise.all([writeDefaultWorkspaceManifest(result.banks, folders), writeDefaultWorkspaceUserData(nextStatuses)]).catch(() => setWorkspaceState('error'))
+      }, 0)
       setToast(`已自动连接“${index.name}”${result.imported ? `，识别 ${result.imported} 张图片` : ''}`)
       return true
     } catch {
@@ -227,9 +350,16 @@ export default function App() {
     setWorkspaceState('syncing')
     try {
       if (!await hasWorkspacePermission(handle, true)) throw new Error('未获得题库文件夹读写权限')
-      const manifest = await readWorkspaceManifest(handle)
+      const [manifest, userData] = await Promise.all([readWorkspaceManifest(handle), readWorkspaceUserData(handle)])
       let nextBanks = manifest ? validateBanks(manifest) : structuredClone(banks)
-      const nextStatuses = manifest?.statuses ? validateStatuses(manifest.statuses) : statuses
+      let seededEnglishCount = 0
+      if (manifest && manifest.builtinEnglishVersion !== BUILTIN_ENGLISH_VERSION) {
+        const englishIds = new Set(englishBanks.map(bank => bank.id))
+        seededEnglishCount = englishBanks.length
+        nextBanks = [...nextBanks.filter(bank => !englishIds.has(bank.id)), ...structuredClone(englishBanks)]
+      }
+      const storedStatuses = userData?.statuses || manifest?.statuses
+      const nextStatuses = storedStatuses ? validateStatuses(storedStatuses) : statuses
       const images = await scanWorkspaceImages(handle)
       const folders = { ...(manifest?.folders || {}) }
       for (const folderName of new Set(images.map(item => item.bankFolder).filter(Boolean))) {
@@ -245,14 +375,24 @@ export default function App() {
         const target = item.bankFolder
           ? nextBanks.find(bank => folders[bank.id] === item.bankFolder)
           : nextBanks.find(bank => bank.id === bankId) || nextBanks[0]
-        return { file: item.file, relativePath: item.relativePath, bankId: target!.id }
+        return { file: item.file, relativePath: item.relativePath, bankId: target!.id, assetUrl: URL.createObjectURL(item.file) }
       })
-      const result = await mergeImageEntries(nextBanks, entries)
+      const result = await mergeImageEntries(nextBanks, entries, { replaceExistingAssets: true })
+      const activeBank = result.banks.find(item => item.id === bankId) || result.banks[0]
+      const activeSections = activeBank?.chapters.flatMap(chapter => chapter.sections) || []
+      if (activeBank && !activeSections.some(item => item.id === sectionId)) {
+        setBankId(activeBank.id)
+        setSectionId(activeSections[0]?.id || '')
+        setQuestionIndex(0)
+      }
       workspaceReady.current = false
       setBanks(result.banks); setStatuses(nextStatuses); setWorkspaceFolders(folders); setWorkspaceHandle(handle); setDefaultWorkspaceConnected(false)
       setWorkspaceState('connected')
-      window.setTimeout(() => { workspaceReady.current = true; writeWorkspaceManifest(handle, result.banks, nextStatuses, folders).catch(() => setWorkspaceState('error')) }, 0)
-      setToast(`已连接“${handle.name}”${result.imported ? `，同步 ${result.imported} 张图片` : ''}`)
+      window.setTimeout(() => {
+        workspaceReady.current = true
+        Promise.all([writeWorkspaceManifest(handle, result.banks, folders), writeWorkspaceUserData(handle, nextStatuses)]).catch(() => setWorkspaceState('error'))
+      }, 0)
+      setToast(`已连接“${handle.name}”${seededEnglishCount ? `，更新 ${seededEnglishCount} 个内置英语题库` : ''}${result.imported ? `，同步 ${result.imported} 张图片` : ''}`)
       return true
     } catch (error) {
       if (isMissingWorkspaceError(error)) {
@@ -286,7 +426,9 @@ export default function App() {
   }
   async function switchWorkspace() {
     try {
-      if (workspaceHandle && workspaceState === 'connected') void writeWorkspaceManifest(workspaceHandle, banks, statuses, workspaceFolders).catch(() => {})
+      if (workspaceHandle && workspaceState === 'connected') {
+        void Promise.all([writeWorkspaceManifest(workspaceHandle, banks, workspaceFolders), writeWorkspaceUserData(workspaceHandle, statuses)]).catch(() => {})
+      }
       const handle = await chooseWorkspace()
       await loadWorkspace(handle)
     } catch (error) {
@@ -318,6 +460,10 @@ export default function App() {
     <header>
       <button className="mobile-menu" onClick={() => setSidebar(true)} aria-label="打开菜单"><Menu/></button>
       <div className="brand"><span className="brand-mark"><BookOpen size={20}/></span><div><strong>本地题库</strong><small>QUESTION BANK</small></div></div>
+      <nav className="subject-nav" aria-label="学科导航">
+        <button className={subject === 'math' ? 'active' : ''} onClick={() => selectSubject('math')}>数学</button>
+        <button className={subject === 'english' ? 'active' : ''} onClick={() => selectSubject('english')}>英语</button>
+      </nav>
       <div className="header-center"><span className={`source-dot ${workspaceState === 'connected' ? 'workspace-on' : ''}`}/>{workspaceState === 'connected' ? `已同步：${defaultWorkspaceConnected ? '默认题库' : workspaceHandle?.name}` : workspaceState === 'syncing' ? '正在同步题库文件夹…' : '本地增强模式 · 数据与位置自动保存'}</div>
       <div className="header-actions">
         <input ref={importRef} hidden type="file" accept=".json,application/json" onChange={e => importData(e.target.files?.[0])}/>
@@ -344,17 +490,17 @@ export default function App() {
       <aside className={sidebar ? 'open' : ''}>
         <div className="aside-mobile-title"><strong>题库导航</strong><button onClick={() => setSidebar(false)}><X/></button></div>
         <p className="eyebrow">题库类型</p>
-        <div className="bank-select-row"><span className="bank-select-icon"><BookOpen size={17}/></span><select aria-label="选择题库" value={bank.id} onChange={event => { const selected = banks.find(item => item.id === event.target.value); if (selected) selectBank(selected) }}>{banks.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="rename-button" aria-label={`重命名题库 ${bank.name}`} onClick={() => openRename('bank', bank.id, bank.name)}><Pencil size={13}/></button></div>
+        <div className="bank-select-row"><span className="bank-select-icon"><BookOpen size={17}/></span><select aria-label="选择题库" value={bank.id} onChange={event => { const selected = banks.find(item => item.id === event.target.value); if (selected) selectBank(selected) }}>{subjectBanks.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="rename-button" aria-label={`重命名题库 ${bank.name}`} onClick={() => openRename('bank', bank.id, bank.name)}><Pencil size={13}/></button></div>
         <div className="selected-bank-meta">{bank.description || (bank.source === 'local' ? '本地题库' : '远程题库')} · {bank.chapters.length} 章</div>
         <button className="new-bank-button" onClick={() => setNewBankOpen(true)}><Plus size={16}/>新建题库</button>
         <button className={view === 'wrong' ? 'wrong-book active' : 'wrong-book'} onClick={showWrongBook}><AlertCircle size={17}/><span><strong>本题库错题本</strong><small>当前题库中的错题</small></span><em>{counts.wrong}</em></button>
         <div className="divider"/>
         <p className="eyebrow">章节导航</p>
         <div className="chapter-scroll"><div className="chapter-tree">{bank.chapters.map(chapter => <div className="chapter" key={chapter.id}>
-          <div className="chapter-title"><ChevronDown size={16}/><span>{chapter.name}</span><button className="rename-button" aria-label={`重命名章节 ${chapter.name}`} onClick={() => openRename('chapter', chapter.id, chapter.name)}><Pencil size={12}/></button></div>
-          {chapter.sections.map(s => <button key={s.id} onClick={() => selectSection(s.id)} className={s.id === sectionId ? 'section active' : 'section'}><span>{s.name}</span><em>{s.questions.length}</em></button>)}
+          <div className="chapter-title"><button className="chapter-toggle" aria-expanded={expandedChapterIds.has(chapter.id)} onClick={() => toggleChapter(chapter.id)}>{expandedChapterIds.has(chapter.id) ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}<span>{chapter.name}</span><em>{chapter.sections.length}</em></button><button className="rename-button" aria-label={`重命名章节 ${chapter.name}`} onClick={() => openRename('chapter', chapter.id, chapter.name)}><Pencil size={12}/></button></div>
+          {expandedChapterIds.has(chapter.id) && chapter.sections.map(s => <button key={s.id} onClick={() => selectSection(s.id)} className={s.id === sectionId ? 'section active' : 'section'}><span>{s.name}</span><em>{s.questions.length}</em></button>)}
         </div>)}{bank.chapters.length === 0 && <div className="empty-chapters">还没有章节<br/><small>点击顶部“图片”批量导入</small></div>}</div></div>
-        <div className="aside-summary"><strong>学习概览</strong><div><span><i className="green"/>{counts.proficient} 熟练</span><span><i className="yellow"/>{counts.vague} 模糊</span><span><i className="red"/>{counts.wrong} 错题</span></div></div>
+        <div className="aside-summary"><strong>学习概览</strong>{binaryFilterMode ? <div className="binary-summary"><span><i/>{counts.none} 未标记</span><span><i className="green"/>{counts.proficient} 正确</span><span><i className="red"/>{counts.wrong} 错误</span></div> : <div><span><i className="green"/>{counts.proficient} 熟练</span><span><i className="yellow"/>{counts.vague} 模糊</span><span><i className="red"/>{counts.wrong} 错题</span></div>}</div>
       </aside>
 
       <main>
@@ -362,18 +508,44 @@ export default function App() {
           <div className="search"><Search size={17}/><input value={query} onChange={e => { setQuery(e.target.value); setQuestionIndex(0) }} placeholder={view === 'wrong' ? '搜索全部错题' : '搜索当前小节'}/></div>
         </div>
 
-        <div className="filter-row"><Filter size={16}/><span>筛选</span>{(['all','none','wrong','vague','proficient'] as const).map(s => <button key={s} className={filter === s ? 'chip active' : 'chip'} onClick={() => { setFilter(s); setQuestionIndex(0) }}>{s === 'all' ? '全部' : statusMeta[s].label}</button>)}</div>
+        <div className="filter-row"><Filter size={16}/><span>筛选</span>{filterOptions.map(s => <button key={s} className={filter === s ? 'chip active' : 'chip'} onClick={() => { setFilter(s); setQuestionIndex(0) }}>{s === 'all' ? '全部' : (binaryFilterMode ? binaryStatusMeta[s].label : statusMeta[s].label)}</button>)}</div>
 
-        {question ? <div className="study-layout">
+        {question && view === 'section' && (section?.passage || section?.passageImageUrls?.length || isPartBSection) ? <div className="passage-study-shell"><div className="passage-study">
+          <section className="passage-questions" aria-label="题目与选项">
+            <div className="passage-block-heading passage-block-heading-actions"><div><span>QUESTIONS & ANSWERS</span><h2>题目与选项</h2><p>答案与解析默认收起，原文置于题目之后。</p></div><button className="batch-answer-toggle" aria-expanded={allPassageAnswersOpen} onClick={toggleAllPassageAnswers}><CircleHelp size={16}/>{allPassageAnswersOpen ? '全部收起' : '全部展开'}<ChevronDown className={allPassageAnswersOpen ? 'rotated' : ''} size={15}/></button></div>
+            {isPartBSection && sharedPartBOptions.length > 0 && <section className="part-b-choice-bank" aria-label="Part B 备选项"><div><span>OPTION BANK</span><h3>{partBOptionBankMeta.title}</h3><p>{partBOptionBankMeta.description}</p>{section?.partBSequence && <p className="part-b-sequence"><strong>已知顺序框架</strong>{section.partBSequence}</p>}</div><div className={hasLongPartBOptions ? 'part-b-shared-options long-options' : 'part-b-shared-options'}>{sharedPartBOptions.map((option, index) => <div key={index}>{option}</div>)}</div></section>}
+            {filteredQuestions.map(item => {
+              const itemStatus = effectiveQuestionStatus(item, statuses[item.id] || 'none', binaryFilterMode)
+              const itemStatusMeta = questionStatusMeta(item, itemStatus, binaryFilterMode)
+              const itemAnswerOpen = expandedPassageAnswers.has(item.id)
+              const withoutRepeatedNumber = item.text.trim().replace(new RegExp(`^${item.number}\\s*[.\\uFF0E、)]\\s*`), '')
+              const itemQuestionText = /^Blank\s+\d+\.?$/i.test(withoutRepeatedNumber) ? '' : withoutRepeatedNumber
+              return <article className="passage-question" id={`question-${item.id}`} key={item.id}>
+                <div className="passage-question-head"><span className="number">{String(item.number).padStart(2, '0')}</span><span className={`current-status ${itemStatus}`}>{itemStatusMeta.icon} {itemStatusMeta.label}</span></div>
+                {itemQuestionText && <p className="passage-question-text">{itemQuestionText}</p>}
+                <AssetGallery keys={item.imageKeys} urls={item.imageUrl ? [item.imageUrl] : []} alt="题目配图"/>
+                {item.options && !isPartBSection && <div className="passage-options">{item.options.map((option, index) => <div key={index}>{option}</div>)}</div>}
+                <button className="passage-answer-toggle" aria-expanded={itemAnswerOpen} onClick={() => togglePassageAnswer(item.id)}><CircleHelp size={16}/>{itemAnswerOpen ? '收起答案与解析' : '查看答案与解析'}<ChevronDown className={itemAnswerOpen ? 'rotated' : ''} size={15}/></button>
+                {itemAnswerOpen && <div className="passage-answer"><div className="answer-result"><span>参考答案</span><strong>{item.answer}</strong></div><div className="answer-analysis"><span>原版解析</span>{(item.answerImageKeys?.length || item.answerImageUrl) ? <AssetGallery keys={item.answerImageKeys} urls={item.answerImageUrl ? [item.answerImageUrl] : []} alt="原版解析截图"/> : <p className="analysis-missing">原版解析截图暂未收录</p>}</div></div>}
+                <div className="passage-status"><div className="passage-markers">{readingTypePicker(item)}<span>掌握情况</span></div><div>{masteryChoices(item, binaryFilterMode).map(s => { const meta = questionStatusMeta(item, s, binaryFilterMode); return <button key={s} className={itemStatus === s ? `status-button ${s} active` : `status-button ${s}`} onClick={() => markQuestion(item.id, itemStatus === s ? 'none' : s, item)}><b>{meta.icon}</b>{meta.label}</button> })}</div></div>
+              </article>
+            })}
+          </section>
+          {(section?.passage || section?.passageImageUrls?.length) && <article className="source-passage">
+            <div className="passage-block-heading"><span>ORIGINAL TEXT</span><h2>原文</h2><p>{section.passageImageUrls?.length ? '扫描版原卷无可靠文本层，按原页完整展示。' : '已清理 PDF 强制换行，按完整句子与阅读行宽重新排版。'}</p></div>
+            {section.passage && <div className="source-copy">{formatPassageParagraphs(section.passage).map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div>}
+            {section.passageImageUrls?.length && <div className="source-scan"><AssetGallery urls={section.passageImageUrls} alt="Part B 原卷原文"/></div>}
+          </article>}
+        </div><nav className="question-nav passage-question-nav" aria-label="题号导航"><div><strong>题号导航</strong><small>点击快速跳转</small></div><div className="number-grid">{filteredQuestions.map((item, index) => { const itemStatus = effectiveQuestionStatus(item, statuses[item.id] || 'none', binaryFilterMode); return <button key={item.id} aria-current={index === questionIndex ? 'true' : undefined} title={`第 ${item.number} 题`} className={`${index === questionIndex ? 'selected ' : ''}${itemStatus}`} onClick={() => jumpToPassageQuestion(item.id, index)}>{item.number}</button> })}</div><div className="legend"><span><i/>未标记</span><span><i className="green"/>正确</span><span><i className="red"/>错误</span></div></nav></div> : question ? <div className="study-layout">
           <section className="question-card">
-            <div className="question-top"><div><span className="number">{String(question.number).padStart(2,'0')}</span>{question.type && <span className="type">{question.type}</span>}{currentQuestionEntry && <span className="wrong-context">{currentQuestionEntry.chapterName} · {currentQuestionEntry.sectionName}</span>}</div><span className={`current-status ${(statuses[question.id] || 'none')}`}>{statusMeta[statuses[question.id] || 'none'].icon} {statusMeta[statuses[question.id] || 'none'].label}</span></div>
+            <div className="question-top"><div><span className="number">{String(question.number).padStart(2,'0')}</span>{question.type && <span className="type">{question.type}</span>}{currentQuestionEntry && <span className="wrong-context">{currentQuestionEntry.chapterName} · {currentQuestionEntry.sectionName}</span>}</div><span className={`current-status ${currentQuestionStatus}`}>{currentQuestionStatusMeta.icon} {currentQuestionStatusMeta.label}</span></div>
             <div className="question-content">{questionText && <p>{questionText}</p>}<AssetGallery keys={question.imageKeys} urls={question.imageUrl ? [question.imageUrl] : []} alt="题目配图"/>{question.options && <div className="options">{question.options.map((o, i) => <div key={i}>{o}</div>)}</div>}</div>
-            <div className="status-bar"><span>掌握情况</span><div>{(['proficient','vague','wrong'] as const).map(s => <button key={s} className={(statuses[question.id] || 'none') === s ? `status-button ${s} active` : `status-button ${s}`} onClick={() => mark((statuses[question.id] || 'none') === s ? 'none' : s)}><b>{statusMeta[s].icon}</b>{statusMeta[s].label}</button>)}</div></div>
+            <div className="status-bar"><div className="status-labels">{readingTypePicker(question)}<span>掌握情况</span></div><div>{masteryChoices(question, binaryFilterMode).map(s => { const meta = questionStatusMeta(question, s, binaryFilterMode); return <button key={s} className={currentQuestionStatus === s ? `status-button ${s} active` : `status-button ${s}`} onClick={() => mark(currentQuestionStatus === s ? 'none' : s)}><b>{meta.icon}</b>{meta.label}</button> })}</div></div>
             <button className="answer-toggle" onClick={() => setAnswerOpen(v => !v)}><CircleHelp size={19}/>{answerOpen ? '收起答案与解析' : '查看答案与解析'}<ChevronDown className={answerOpen ? 'rotated' : ''} size={18}/></button>
-            {answerOpen && <div className="answer"><div><span>参考答案</span><strong>{question.answer}</strong></div><div><span>解题思路</span><p>{question.analysis}</p><AssetGallery keys={question.answerImageKeys} urls={question.answerImageUrl ? [question.answerImageUrl] : []} alt="答案配图"/></div>{question.videoUrl && <a href={question.videoUrl} target="_blank" rel="noreferrer">观看视频解析 →</a>}</div>}
+            {answerOpen && <div className={hasAnswerImages ? 'answer answer-with-images' : 'answer'}><div className="answer-result"><span>参考答案</span><strong>{question.answer}</strong></div><div className="answer-analysis"><span>原版解析</span>{hasAnswerImages ? <AssetGallery keys={question.answerImageKeys} urls={question.answerImageUrl ? [question.answerImageUrl] : []} alt="原版解析截图"/> : <p className="analysis-missing">原版解析截图暂未收录</p>}</div>{question.videoUrl && <a href={question.videoUrl} target="_blank" rel="noreferrer">观看视频解析 →</a>}</div>}
             <div className="pager"><button disabled={questionIndex === 0} onClick={() => { setQuestionIndex(i => i - 1); setAnswerOpen(false) }}>← 上一题</button><span>{questionIndex + 1} / {filteredQuestions.length}</span><button disabled={questionIndex >= filteredQuestions.length - 1} onClick={() => { setQuestionIndex(i => i + 1); setAnswerOpen(false) }}>下一题 →</button></div>
           </section>
-          <nav className="question-nav"><div><strong>题号导航</strong><small>{view === 'wrong' ? '章-题号' : '点击快速跳转'}</small></div><div className="number-grid">{filteredQuestions.map((q, i) => { const entry = view === 'wrong' ? wrongEntries.find(item => item.question.id === q.id) : undefined; return <button key={q.id} title={entry ? `${entry.chapterName} · 第 ${q.number} 题` : `第 ${q.number} 题`} className={`${i === questionIndex ? 'selected ' : ''}${statuses[q.id] || 'none'}`} onClick={() => { setQuestionIndex(i); setAnswerOpen(false) }}>{entry ? `${entry.chapterIndex + 1}-${q.number}` : q.number}</button> })}</div><div className="legend"><span><i/>未标记</span><span><i className="green"/>熟练</span><span><i className="yellow"/>模糊</span><span><i className="red"/>错题</span></div></nav>
+          <nav className="question-nav"><div><strong>题号导航</strong><small>{view === 'wrong' ? '章-题号' : '点击快速跳转'}</small></div><div className="number-grid">{filteredQuestions.map((q, i) => { const entry = view === 'wrong' ? wrongEntries.find(item => item.question.id === q.id) : undefined; const navStatus = effectiveQuestionStatus(q, statuses[q.id] || 'none', binaryFilterMode); return <button key={q.id} title={entry ? `${entry.chapterName} · 第 ${q.number} 题` : `第 ${q.number} 题`} className={`${i === questionIndex ? 'selected ' : ''}${navStatus}`} onClick={() => { setQuestionIndex(i); setAnswerOpen(false) }}>{entry ? `${entry.chapterIndex + 1}-${q.number}` : q.number}</button> })}</div><div className="legend"><span><i/>未标记</span><span><i className="green"/>{binaryFilterMode ? '正确' : '熟练'}</span>{!binaryFilterMode && <span><i className="yellow"/>模糊</span>}<span><i className="red"/>{binaryFilterMode ? '错误' : '错题'}</span></div></nav>
         </div> : <div className="no-results"><Search size={32}/><h2>{view === 'wrong' && wrongQuestions.length === 0 ? '错题已经清空' : '没有符合条件的题目'}</h2><p>{view === 'wrong' && wrongQuestions.length === 0 ? '很好，继续练习其他章节巩固掌握情况。' : '尝试更换筛选条件或清空搜索词。'}</p><button onClick={() => view === 'wrong' && wrongQuestions.length === 0 ? setView('section') : (setFilter('all'), setQuery(''))}><RotateCcw size={16}/>{view === 'wrong' && wrongQuestions.length === 0 ? '返回当前小节' : '重置筛选'}</button></div>}
 
         {printMode && printJob && <section className="print-sheet" aria-hidden="true">
@@ -387,6 +559,6 @@ export default function App() {
     {namingHelpOpen && <div className="modal-backdrop" onClick={() => setNamingHelpOpen(false)}><section className="modal-card naming-card" role="dialog" aria-modal="true" aria-labelledby="naming-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setNamingHelpOpen(false)}><X/></button><span className="modal-icon"><FileImage/></span><h2 id="naming-title">图片命名标准</h2><p>Q 表示题目，A 表示答案；后面依次是章号－小节号－题号。</p><div className="naming-example"><code>Q-01-1-01.png</code><span>单张题目图</span><code>Q-01-1-01.1.png</code><span>多图组成时的第 1 张</span><code>Q-01-1-01.2.png</code><span>多图组成时的第 2 张</span><code>A-01-1-01.png</code><span>单张答案图</span><code>A-01-1-01.1.png</code><span>多张答案中的第 1 张</span><code>A-01-1-01.2.png</code><span>多张答案中的第 2 张</span></div><h3>文件夹命名标准</h3><code className="folder-example">01 行列式 1-基础</code><p>自动生成“行列式”章节和“基础”小节。未按以上标准命名的图片会被跳过。</p><button className="primary-button" onClick={() => setNamingHelpOpen(false)}>我知道了</button></section></div>}
     {exportOpen && <ExportDialog banks={banks} statuses={statuses} defaultBankId={bank.id} defaultSectionId={sectionId} onClose={() => setExportOpen(false)} onPdf={printExport} onNotice={setToast}/>}
     {renameTarget && <div className="modal-backdrop" onClick={() => setRenameTarget(null)}><section className="modal-card rename-card" role="dialog" aria-modal="true" aria-labelledby="rename-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setRenameTarget(null)}><X/></button><span className="modal-icon"><Pencil/></span><h2 id="rename-title">重命名{renameTarget.kind === 'bank' ? '题库' : '章节'}</h2><p>只修改显示名称，不会改变题目、图片或学习状态。</p><label>新名称<input autoFocus value={renameValue} onChange={event => setRenameValue(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') applyRename() }} placeholder={renameTarget.name}/></label><button className="primary-button" onClick={applyRename}>保存名称</button></section></div>}
-    {settingsOpen && <SettingsDialog banks={banks} activeBankId={bank.id} builtInIds={new Set(sampleBanks.map(item => item.id))} onClose={() => setSettingsOpen(false)} onClearMarks={clearMarks} onExportBank={exportSingleBank} onResetBank={resetManagedBank} onDeleteBank={deleteManagedBank} onRestoreBuiltIns={restoreBuiltIns} onFactoryReset={factoryReset}/>}
+    {settingsOpen && <SettingsDialog banks={banks} activeBankId={bank.id} builtInIds={new Set(builtInBanks.map(item => item.id))} protectedBankIds={protectedBankIds} onClose={() => setSettingsOpen(false)} onClearMarks={clearMarks} onExportBank={exportSingleBank} onResetBank={resetManagedBank} onDeleteBank={deleteManagedBank} onRestoreBuiltIns={restoreBuiltIns} onFactoryReset={factoryReset}/>}
   </div>
 }

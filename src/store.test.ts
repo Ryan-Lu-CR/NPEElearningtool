@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import englishPayload from './englishBanks.json'
+import { initializeBuiltInBanks } from './data'
 import { loadBanks, loadNavigation, loadStatuses, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, validateBanks, validateStatuses } from './store'
+import type { QuestionBank } from './types'
 
 class MemoryStorage {
   private data = new Map<string, string>()
@@ -17,7 +20,10 @@ const validBank = {
   }]}]
 }
 
-beforeEach(() => { Object.defineProperty(globalThis, 'localStorage', { value: new MemoryStorage(), configurable: true }) })
+beforeEach(() => {
+  initializeBuiltInBanks(englishPayload.banks as unknown as QuestionBank[])
+  Object.defineProperty(globalThis, 'localStorage', { value: new MemoryStorage(), configurable: true })
+})
 
 describe('validateBanks', () => {
   it('归一化缺省来源并保留完整层级', () => {
@@ -52,10 +58,32 @@ describe('validateBanks', () => {
     expect(validateBanks([imageOnly])[0].chapters[0].sections[0].questions[0].text).toBe('')
   })
 
+  it('允许只有答案图的待补全题目保留空题干', () => {
+    const answerImageOnly = structuredClone(validBank)
+    Object.assign(answerImageOnly.chapters[0].sections[0].questions[0], { text: '', imageKeys: [], answerImageKeys: ['a/1'] })
+    const question = validateBanks([answerImageOnly])[0].chapters[0].sections[0].questions[0]
+    expect(question.text).toBe('')
+    expect(question.answerImageKeys).toEqual(['a/1'])
+  })
+
   it('题型字段可以完全省略', () => {
     const withoutType = structuredClone(validBank)
     Reflect.deleteProperty(withoutType.chapters[0].sections[0].questions[0], 'type')
     expect(validateBanks([withoutType])[0].chapters[0].sections[0].questions[0].type).toBeUndefined()
+  })
+
+  it('保留小节共用的英语原文', () => {
+    const withPassage = structuredClone(validBank)
+    Object.assign(withPassage.chapters[0].sections[0], { passage: 'First paragraph.\n\nSecond paragraph.' })
+    expect(validateBanks([withPassage])[0].chapters[0].sections[0].passage).toContain('Second paragraph')
+  })
+
+  it('保留合法的阅读题型标注并过滤非法值', () => {
+    const marked = structuredClone(validBank)
+    Object.assign(marked.chapters[0].sections[0].questions[0], { readingType: 'inference' })
+    expect(validateBanks([marked])[0].chapters[0].sections[0].questions[0].readingType).toBe('inference')
+    Object.assign(marked.chapters[0].sections[0].questions[0], { readingType: 'invalid' })
+    expect(validateBanks([marked])[0].chapters[0].sections[0].questions[0].readingType).toBeUndefined()
   })
 })
 
@@ -70,6 +98,16 @@ describe('local storage recovery', () => {
     expect(loadStatuses()).toEqual({ q1: 'wrong', q3: 'proficient' })
   })
 
+  it('为已有缓存一次性补入英语真题内置题库', () => {
+    localStorage.setItem('npee:banks:v1', JSON.stringify([validBank]))
+    const firstLoad = loadBanks()
+    expect(firstLoad.some(bank => bank.id === 'bank-1')).toBe(true)
+    expect(firstLoad.filter(bank => /^english-200[4-9]$/.test(bank.id))).toHaveLength(6)
+
+    saveBanks(firstLoad.filter(bank => bank.id !== 'english-2004'))
+    expect(loadBanks().some(bank => bank.id === 'english-2004')).toBe(false)
+  })
+
   it('导入备份时过滤非法学习状态', () => {
     expect(validateStatuses({ q1: 'wrong', q2: 'hacked', q3: 1 })).toEqual({ q1: 'wrong' })
   })
@@ -79,6 +117,24 @@ describe('local storage recovery', () => {
     saveBanks(banks); saveStatuses({ 'question-1': 'vague' })
     expect(loadBanks()).toEqual(banks)
     expect(loadStatuses()).toEqual({ 'question-1': 'vague' })
+  })
+
+  it('内置题库使用紧凑缓存，避免重复占用 localStorage', () => {
+    const banks = loadBanks()
+    expect(saveBanks(banks)).toBe(true)
+    const raw = localStorage.getItem('npee:banks:v1') || ''
+    expect(raw.length).toBeLessThan(2_000)
+    expect(loadBanks()).toEqual(banks)
+  })
+
+  it('紧凑缓存保留内置题库删除和自定义修改', () => {
+    const banks = loadBanks()
+    const changed = banks.filter(bank => bank.id !== 'english-2004')
+    changed[0] = { ...changed[0], name: '用户重命名' }
+    saveBanks(changed)
+    const restored = loadBanks()
+    expect(restored.some(bank => bank.id === 'english-2004')).toBe(false)
+    expect(restored[0].name).toBe('用户重命名')
   })
 })
 

@@ -1,19 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { isMissingWorkspaceError, safeFolderName } from './workspace'
+import type { QuestionBank } from './types'
+import { createWorkspaceManifest, createWorkspaceUserData } from './workspace'
 
-describe('safeFolderName', () => {
-  it('removes characters forbidden in local folder names', () => {
-    expect(safeFolderName('高数/强化:2027?')).toBe('高数-强化-2027-')
+const bank: QuestionBank = {
+  id: 'bank-1',
+  name: '题库',
+  source: 'local',
+  chapters: [],
+}
+
+describe('workspace data separation', () => {
+  it('keeps project data free of user statuses', () => {
+    const manifest = createWorkspaceManifest([bank], { 'bank-1': '题库' })
+    expect(manifest.banks).toEqual([bank])
+    expect(manifest.folders).toEqual({ 'bank-1': '题库' })
+    expect(manifest).not.toHaveProperty('statuses')
   })
 
-  it('provides a readable fallback', () => {
-    expect(safeFolderName('   ')).toBe('未命名题库')
-  })
-})
-
-describe('isMissingWorkspaceError', () => {
-  it('识别目录移动后产生的 NotFoundError', () => {
-    expect(isMissingWorkspaceError(new DOMException('missing', 'NotFoundError'))).toBe(true)
-    expect(isMissingWorkspaceError(new Error('missing'))).toBe(false)
+  it('writes statuses only to user data', () => {
+    const userData = createWorkspaceUserData({ 'question-1': 'wrong' })
+    expect(userData.statuses).toEqual({ 'question-1': 'wrong' })
+    expect(userData).not.toHaveProperty('banks')
+    expect(userData).not.toHaveProperty('folders')
   })
 })
