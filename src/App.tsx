@@ -225,7 +225,7 @@ export default function App() {
 
         {printMode && printJob && <section className="print-sheet" aria-hidden="true">
           <div className="print-title"><h1>{printJob.title}</h1><p>{printJob.subtitle}</p></div>
-          {Array.from({ length: Math.ceil(printJob.questions.length / printJob.perPage) }, (_, index) => <ExportPage key={index} questions={printJob.questions.slice(index * printJob.perPage, (index + 1) * printJob.perPage)} includeAnswers={printJob.includeAnswers} pageNumber={index + 1}/>) }
+          {Array.from({ length: Math.ceil(printJob.questions.length / printJob.perPage) }, (_, index) => <ExportPage key={index} questions={printJob.questions.slice(index * printJob.perPage, (index + 1) * printJob.perPage)} includeAnswers={printJob.includeAnswers} pageNumber={index + 1} showType={false}/>) }
         </section>}
       </main>
     </div>
