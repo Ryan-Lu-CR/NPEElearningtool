@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { loadBanks, loadStatuses, saveBanks, saveStatuses, validateBanks, validateStatuses } from './store'
+import { loadBanks, loadStatuses, renameBank, renameChapter, saveBanks, saveStatuses, validateBanks, validateStatuses } from './store'
 
 class MemoryStorage {
   private data = new Map<string, string>()
@@ -73,5 +73,23 @@ describe('local storage recovery', () => {
     saveBanks(banks); saveStatuses({ 'question-1': 'vague' })
     expect(loadBanks()).toEqual(banks)
     expect(loadStatuses()).toEqual({ 'question-1': 'vague' })
+  })
+})
+
+describe('rename', () => {
+  it('重命名题库但保持 ID 和题目关联', () => {
+    const banks = validateBanks([validBank])
+    const renamed = renameBank(banks, 'bank-1', '  新题库名称  ')
+    expect(renamed[0].name).toBe('新题库名称')
+    expect(renamed[0].id).toBe('bank-1')
+    expect(renamed[0].chapters[0].sections[0].questions[0].id).toBe('question-1')
+  })
+
+  it('重命名指定章节且不影响其他层级 ID', () => {
+    const banks = validateBanks([validBank])
+    const renamed = renameChapter(banks, 'bank-1', 'chapter-1', '极限专题')
+    expect(renamed[0].chapters[0].name).toBe('极限专题')
+    expect(renamed[0].chapters[0].id).toBe('chapter-1')
+    expect(renamed[0].chapters[0].sections[0].id).toBe('section-1')
   })
 })

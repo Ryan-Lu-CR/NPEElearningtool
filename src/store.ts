@@ -37,6 +37,18 @@ export function loadStatuses(): Record<string, QuestionStatus> {
 }
 export function saveStatuses(statuses: Record<string, QuestionStatus>) { localStorage.setItem(STATUS_KEY, JSON.stringify(statuses)) }
 
+export function renameBank(banks: QuestionBank[], bankId: string, name: string) {
+  const trimmed = name.trim()
+  if (!trimmed) return banks
+  return banks.map(bank => bank.id === bankId ? { ...bank, name: trimmed } : bank)
+}
+
+export function renameChapter(banks: QuestionBank[], bankId: string, chapterId: string, name: string) {
+  const trimmed = name.trim()
+  if (!trimmed) return banks
+  return banks.map(bank => bank.id === bankId ? { ...bank, chapters: bank.chapters.map(chapter => chapter.id === chapterId ? { ...chapter, name: trimmed } : chapter) } : bank)
+}
+
 export function validateStatuses(value: unknown): Record<string, QuestionStatus> {
   if (!isRecord(value)) return {}
   return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, QuestionStatus] => VALID_STATUSES.has(entry[1] as QuestionStatus)))

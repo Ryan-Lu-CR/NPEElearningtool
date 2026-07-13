@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, BookOpen, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, Menu, Plus, RotateCcw, Search, X } from 'lucide-react'
+import { AlertCircle, BookOpen, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, Menu, Pencil, Plus, RotateCcw, Search, X } from 'lucide-react'
 import type { Question, QuestionBank, QuestionStatus, Section } from './types'
-import { loadBanks, loadStatuses, saveBanks, saveStatuses, validateBanks, validateStatuses } from './store'
+import { loadBanks, loadStatuses, renameBank, renameChapter, saveBanks, saveStatuses, validateBanks, validateStatuses } from './store'
 import { parseImageFilename, parseStructuredImagePath, putAssets, type StructuredImageMatch } from './assets'
 import AssetGallery from './AssetGallery'
 import ExportDialog, { ExportPage, type ExportJob } from './ExportDialog'
@@ -28,6 +28,8 @@ export default function App() {
   const [newBankOpen, setNewBankOpen] = useState(false)
   const [newBankName, setNewBankName] = useState('')
   const [namingHelpOpen, setNamingHelpOpen] = useState(false)
+  const [renameTarget, setRenameTarget] = useState<{ kind: 'bank' | 'chapter'; id: string; name: string } | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   const importRef = useRef<HTMLInputElement>(null)
   const imageImportRef = useRef<HTMLInputElement>(null)
 
@@ -157,6 +159,13 @@ export default function App() {
     const created: QuestionBank = { id: `local-${Date.now()}`, name, description: '自建本地题库', source: 'local', chapters: [] }
     setBanks(previous => [...previous, created]); setBankId(created.id); setSectionId(''); setView('section'); setNewBankName(''); setNewBankOpen(false); setToast(`已新建“${name}”，现在可以批量导入图片`)
   }
+  function openRename(kind: 'bank' | 'chapter', id: string, name: string) { setRenameTarget({ kind, id, name }); setRenameValue(name) }
+  function applyRename() {
+    const name = renameValue.trim()
+    if (!renameTarget || !name) { setToast('名称不能为空'); return }
+    setBanks(previous => renameTarget.kind === 'bank' ? renameBank(previous, renameTarget.id, name) : renameChapter(previous, bank.id, renameTarget.id, name))
+    setRenameTarget(null); setToast(`已重命名为“${name}”`)
+  }
 
   if (!bank) return <div className="empty-app"><BookOpen size={42}/><h1>还没有题库</h1><button onClick={() => importRef.current?.click()}>导入题库</button><input ref={importRef} hidden type="file" accept=".json" onChange={e => importData(e.target.files?.[0])}/></div>
 
@@ -182,14 +191,14 @@ export default function App() {
         <div className="aside-mobile-title"><strong>题库导航</strong><button onClick={() => setSidebar(false)}><X/></button></div>
         <p className="eyebrow">题库类型</p>
         <button className="new-bank-button" onClick={() => setNewBankOpen(true)}><Plus size={16}/>新建题库</button>
-        <div className="bank-list">{banks.map(b => <button key={b.id} className={b.id === bank.id ? 'bank active' : 'bank'} onClick={() => selectBank(b)}>
+        <div className="bank-list">{banks.map(b => <div className="bank-row" key={b.id}><button className={b.id === bank.id ? 'bank active' : 'bank'} onClick={() => selectBank(b)}>
           <span className="book-icon"><BookOpen size={17}/></span><span><strong>{b.name}</strong><small>{b.description || (b.source === 'local' ? '本地题库' : '远程题库')}</small></span><ChevronRight size={17}/>
-        </button>)}</div>
+        </button><button className="rename-button" aria-label={`重命名题库 ${b.name}`} title="重命名题库" onClick={() => openRename('bank', b.id, b.name)}><Pencil size={13}/></button></div>)}</div>
         <button className={view === 'wrong' ? 'wrong-book active' : 'wrong-book'} onClick={showWrongBook}><AlertCircle size={17}/><span><strong>全局错题本</strong><small>汇总所有题库中的错题</small></span><em>{counts.wrong}</em></button>
         <div className="divider"/>
         <p className="eyebrow">章节导航</p>
         <div className="chapter-tree">{bank.chapters.map(chapter => <div className="chapter" key={chapter.id}>
-          <div className="chapter-title"><ChevronDown size={16}/><span>{chapter.name}</span></div>
+          <div className="chapter-title"><ChevronDown size={16}/><span>{chapter.name}</span><button className="rename-button" aria-label={`重命名章节 ${chapter.name}`} title="重命名章节" onClick={() => openRename('chapter', chapter.id, chapter.name)}><Pencil size={12}/></button></div>
           {chapter.sections.map(s => <button key={s.id} onClick={() => selectSection(s.id)} className={s.id === sectionId ? 'section active' : 'section'}><span>{s.name}</span><em>{s.questions.length}</em></button>)}
         </div>)}</div>
         <div className="aside-summary"><strong>学习概览</strong><div><span><i className="green"/>{counts.proficient} 熟练</span><span><i className="yellow"/>{counts.vague} 模糊</span><span><i className="red"/>{counts.wrong} 错题</span></div></div>
@@ -224,5 +233,6 @@ export default function App() {
     {newBankOpen && <div className="modal-backdrop" onClick={() => setNewBankOpen(false)}><section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="new-bank-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setNewBankOpen(false)}><X/></button><span className="modal-icon"><BookOpen/></span><h2 id="new-bank-title">新建题库</h2><p>先起一个名字，再点击顶部“图片”选择素材目录，章节和题目会自动生成。</p><label>题库名称<input autoFocus value={newBankName} onChange={event => setNewBankName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') createBank() }} placeholder="例如：线性代数强化题"/></label><button className="primary-button" onClick={createBank}>创建并开始导入</button></section></div>}
     {namingHelpOpen && <div className="modal-backdrop" onClick={() => setNamingHelpOpen(false)}><section className="modal-card naming-card" role="dialog" aria-modal="true" aria-labelledby="naming-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setNamingHelpOpen(false)}><X/></button><span className="modal-icon"><FileImage/></span><h2 id="naming-title">图片命名参考</h2><p>Q 表示题目，A 表示答案；后面依次是章号－小节号－题号。</p><div className="naming-example"><code>Q-01-1-01.png</code><span>单张题目图</span><code>Q-01-1-01.1.png</code><span>多图组成时的第 1 张</span><code>Q-01-1-01.2.png</code><span>多图组成时的第 2 张</span><code>A-01-1-01.png</code><span>单张答案图</span><code>A-01-1-01.1.png</code><span>多张答案中的第 1 张</span><code>A-01-1-01.2.png</code><span>多张答案中的第 2 张</span></div><h3>文件夹自动识别名称</h3><code className="folder-example">01 行列式 1-基础.assets</code><p>自动生成“行列式”章节和“基础”小节。旧的 <code>01-1-01.png</code> 仍可识别为题目图。</p><button className="primary-button" onClick={() => setNamingHelpOpen(false)}>我知道了</button></section></div>}
     {exportOpen && <ExportDialog banks={banks} statuses={statuses} defaultBankId={bank.id} defaultSectionId={sectionId} onClose={() => setExportOpen(false)} onPdf={printExport} onNotice={setToast}/>}
+    {renameTarget && <div className="modal-backdrop" onClick={() => setRenameTarget(null)}><section className="modal-card rename-card" role="dialog" aria-modal="true" aria-labelledby="rename-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setRenameTarget(null)}><X/></button><span className="modal-icon"><Pencil/></span><h2 id="rename-title">重命名{renameTarget.kind === 'bank' ? '题库' : '章节'}</h2><p>只修改显示名称，不会改变题目、图片或学习状态。</p><label>新名称<input autoFocus value={renameValue} onChange={event => setRenameValue(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') applyRename() }} placeholder={renameTarget.name}/></label><button className="primary-button" onClick={applyRename}>保存名称</button></section></div>}
   </div>
 }
