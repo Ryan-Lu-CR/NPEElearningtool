@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assetKeysForBank, clearQuestionStatuses, removeBank, resetBankData } from './bankManagement'
+import { assetKeysForBank, clearQuestionStatuses, orderedQuestionEntriesForBank, removeBank, resetBankData } from './bankManagement'
 import type { QuestionBank } from './types'
 
 const bank: QuestionBank = { id: 'b1', name: '题库', source: 'local', chapters: [{ id: 'c1', name: '章', sections: [{ id: 's1', name: '节', questions: [
@@ -23,5 +23,13 @@ describe('bank management', () => {
     const changed = { ...bank, name: '已修改', chapters: [] }
     const restored = resetBankData([changed], 'b1', bank)[0]
     expect(restored.name).toBe('题库'); expect(restored.chapters).toHaveLength(1); expect(restored).not.toBe(bank)
+  })
+  it('按章节顺序和题号升序生成题目列表', () => {
+    const unsorted = structuredClone(bank)
+    unsorted.chapters[0].sections[0].questions.reverse()
+    const entries = orderedQuestionEntriesForBank(unsorted)
+    expect(entries.map(entry => entry.question.number)).toEqual([1, 2])
+    expect(entries[0].chapterIndex).toBe(0)
+    expect(entries[0].chapterName).toBe('章')
   })
 })

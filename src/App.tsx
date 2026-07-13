@@ -6,7 +6,7 @@ import { clearAssets, deleteAssets, parseImageFilename, parseStructuredImagePath
 import AssetGallery from './AssetGallery'
 import ExportDialog, { ExportPage, type ExportJob } from './ExportDialog'
 import SettingsDialog from './SettingsDialog'
-import { assetKeysForBank, clearQuestionStatuses, questionIdsForBank, removeBank, resetBankData } from './bankManagement'
+import { assetKeysForBank, clearQuestionStatuses, orderedQuestionEntriesForBank, questionIdsForBank, removeBank, resetBankData } from './bankManagement'
 import { sampleBanks } from './data'
 
 const statusMeta: Record<QuestionStatus, { label: string; icon: string }> = {
@@ -47,7 +47,7 @@ export default function App() {
       const savedSection = savedBank?.chapters.flatMap(chapter => chapter.sections).find(item => item.id === saved.sectionId)
       if (savedBank && savedSection) {
         const savedQuestions = saved.view === 'wrong'
-          ? banks.flatMap(item => item.chapters.flatMap(chapter => chapter.sections.flatMap(item => item.questions))).filter(item => statuses[item.id] === 'wrong')
+          ? orderedQuestionEntriesForBank(savedBank).map(entry => entry.question).filter(item => statuses[item.id] === 'wrong')
           : savedSection.questions
         setBankId(savedBank.id); setSectionId(savedSection.id); setView(saved.view)
         setQuestionIndex(Math.max(0, savedQuestions.findIndex(item => item.id === saved.questionId)))
@@ -65,7 +65,9 @@ export default function App() {
   const bank = banks.find(b => b.id === bankId) || banks[0]
   const section: Section | undefined = bank?.chapters.flatMap(c => c.sections).find(s => s.id === sectionId)
   const allQuestions = useMemo(() => banks.flatMap(b => b.chapters.flatMap(c => c.sections.flatMap(s => s.questions))), [banks])
-  const wrongQuestions = useMemo(() => allQuestions.filter(q => statuses[q.id] === 'wrong'), [allQuestions, statuses])
+  const bankQuestionEntries = useMemo(() => orderedQuestionEntriesForBank(bank), [bank])
+  const wrongEntries = useMemo(() => bankQuestionEntries.filter(entry => statuses[entry.question.id] === 'wrong'), [bankQuestionEntries, statuses])
+  const wrongQuestions = useMemo(() => wrongEntries.map(entry => entry.question), [wrongEntries])
   const sourceQuestions = view === 'wrong' ? wrongQuestions : (section?.questions || [])
   const filteredQuestions = useMemo(() => sourceQuestions.filter(q => {
     const matchesStatus = filter === 'all' || (statuses[q.id] || 'none') === filter
@@ -74,7 +76,8 @@ export default function App() {
   }), [sourceQuestions, filter, query, statuses])
   const question = filteredQuestions[Math.min(questionIndex, Math.max(0, filteredQuestions.length - 1))]
   const questionText = question?.type === '图片题' && question.text === `第 ${question.number} 题` ? '' : question?.text
-  const counts = allQuestions.reduce((acc, q) => { const s = statuses[q.id] || 'none'; acc[s]++; return acc }, { none: 0, proficient: 0, vague: 0, wrong: 0 })
+  const currentQuestionEntry = view === 'wrong' ? wrongEntries.find(entry => entry.question.id === question?.id) : undefined
+  const counts = bankQuestionEntries.reduce((acc, entry) => { const s = statuses[entry.question.id] || 'none'; acc[s]++; return acc }, { none: 0, proficient: 0, vague: 0, wrong: 0 })
 
   useEffect(() => {
     if (!navigationReady) return
@@ -247,7 +250,7 @@ export default function App() {
         <div className="bank-select-row"><span className="bank-select-icon"><BookOpen size={17}/></span><select aria-label="选择题库" value={bank.id} onChange={event => { const selected = banks.find(item => item.id === event.target.value); if (selected) selectBank(selected) }}>{banks.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="rename-button" aria-label={`重命名题库 ${bank.name}`} onClick={() => openRename('bank', bank.id, bank.name)}><Pencil size={13}/></button></div>
         <div className="selected-bank-meta">{bank.description || (bank.source === 'local' ? '本地题库' : '远程题库')} · {bank.chapters.length} 章</div>
         <button className="new-bank-button" onClick={() => setNewBankOpen(true)}><Plus size={16}/>新建题库</button>
-        <button className={view === 'wrong' ? 'wrong-book active' : 'wrong-book'} onClick={showWrongBook}><AlertCircle size={17}/><span><strong>全局错题本</strong><small>汇总所有题库中的错题</small></span><em>{counts.wrong}</em></button>
+        <button className={view === 'wrong' ? 'wrong-book active' : 'wrong-book'} onClick={showWrongBook}><AlertCircle size={17}/><span><strong>本题库错题本</strong><small>当前题库中的错题</small></span><em>{counts.wrong}</em></button>
         <div className="divider"/>
         <p className="eyebrow">章节导航</p>
         <div className="chapter-scroll"><div className="chapter-tree">{bank.chapters.map(chapter => <div className="chapter" key={chapter.id}>
@@ -258,7 +261,7 @@ export default function App() {
       </aside>
 
       <main>
-        <div className="page-head"><div><span className="breadcrumb">{view === 'wrong' ? '学习中心' : bank.name} <ChevronRight size={13}/> {view === 'wrong' ? '全局错题本' : section?.name || '未选择'}</span><h1>{view === 'wrong' ? '全局错题本' : section?.name || '请选择具体节题目'}</h1><p>{view === 'wrong' ? `汇总 ${wrongQuestions.length} 道错题 · 修改掌握状态后自动移出` : section ? `共 ${section.questions.length} 道题 · 学习进度实时保存` : '从左侧选择一个章节开始学习'}</p></div>
+        <div className="page-head"><div><span className="breadcrumb">{bank.name} <ChevronRight size={13}/> {view === 'wrong' ? '本题库错题本' : section?.name || '未选择'}</span><h1>{view === 'wrong' ? '本题库错题本' : section?.name || '请选择具体节题目'}</h1><p>{view === 'wrong' ? `按章节和题号排列 · 共 ${wrongQuestions.length} 道错题` : section ? `共 ${section.questions.length} 道题 · 学习进度实时保存` : '从左侧选择一个章节开始学习'}</p></div>
           <div className="search"><Search size={17}/><input value={query} onChange={e => { setQuery(e.target.value); setQuestionIndex(0) }} placeholder={view === 'wrong' ? '搜索全部错题' : '搜索当前小节'}/></div>
         </div>
 
@@ -266,14 +269,14 @@ export default function App() {
 
         {question ? <div className="study-layout">
           <section className="question-card">
-            <div className="question-top"><div><span className="number">{String(question.number).padStart(2,'0')}</span><span className="type">{question.type}</span></div><span className={`current-status ${(statuses[question.id] || 'none')}`}>{statusMeta[statuses[question.id] || 'none'].icon} {statusMeta[statuses[question.id] || 'none'].label}</span></div>
+            <div className="question-top"><div><span className="number">{String(question.number).padStart(2,'0')}</span><span className="type">{question.type}</span>{currentQuestionEntry && <span className="wrong-context">{currentQuestionEntry.chapterName} · {currentQuestionEntry.sectionName}</span>}</div><span className={`current-status ${(statuses[question.id] || 'none')}`}>{statusMeta[statuses[question.id] || 'none'].icon} {statusMeta[statuses[question.id] || 'none'].label}</span></div>
             <div className="question-content">{questionText && <p>{questionText}</p>}<AssetGallery keys={question.imageKeys} urls={question.imageUrl ? [question.imageUrl] : []} alt="题目配图"/>{question.options && <div className="options">{question.options.map((o, i) => <div key={i}>{o}</div>)}</div>}</div>
             <div className="status-bar"><span>掌握情况</span><div>{(['proficient','vague','wrong'] as const).map(s => <button key={s} className={(statuses[question.id] || 'none') === s ? `status-button ${s} active` : `status-button ${s}`} onClick={() => mark((statuses[question.id] || 'none') === s ? 'none' : s)}><b>{statusMeta[s].icon}</b>{statusMeta[s].label}</button>)}</div></div>
             <button className="answer-toggle" onClick={() => setAnswerOpen(v => !v)}><CircleHelp size={19}/>{answerOpen ? '收起答案与解析' : '查看答案与解析'}<ChevronDown className={answerOpen ? 'rotated' : ''} size={18}/></button>
             {answerOpen && <div className="answer"><div><span>参考答案</span><strong>{question.answer}</strong></div><div><span>解题思路</span><p>{question.analysis}</p><AssetGallery keys={question.answerImageKeys} urls={question.answerImageUrl ? [question.answerImageUrl] : []} alt="答案配图"/></div>{question.videoUrl && <a href={question.videoUrl} target="_blank" rel="noreferrer">观看视频解析 →</a>}</div>}
             <div className="pager"><button disabled={questionIndex === 0} onClick={() => { setQuestionIndex(i => i - 1); setAnswerOpen(false) }}>← 上一题</button><span>{questionIndex + 1} / {filteredQuestions.length}</span><button disabled={questionIndex >= filteredQuestions.length - 1} onClick={() => { setQuestionIndex(i => i + 1); setAnswerOpen(false) }}>下一题 →</button></div>
           </section>
-          <nav className="question-nav"><div><strong>题号导航</strong><small>点击快速跳转</small></div><div className="number-grid">{filteredQuestions.map((q, i) => <button key={q.id} className={`${i === questionIndex ? 'selected ' : ''}${statuses[q.id] || 'none'}`} onClick={() => { setQuestionIndex(i); setAnswerOpen(false) }}>{q.number}</button>)}</div><div className="legend"><span><i/>未标记</span><span><i className="green"/>熟练</span><span><i className="yellow"/>模糊</span><span><i className="red"/>错题</span></div></nav>
+          <nav className="question-nav"><div><strong>题号导航</strong><small>{view === 'wrong' ? '章-题号' : '点击快速跳转'}</small></div><div className="number-grid">{filteredQuestions.map((q, i) => { const entry = view === 'wrong' ? wrongEntries.find(item => item.question.id === q.id) : undefined; return <button key={q.id} title={entry ? `${entry.chapterName} · 第 ${q.number} 题` : `第 ${q.number} 题`} className={`${i === questionIndex ? 'selected ' : ''}${statuses[q.id] || 'none'}`} onClick={() => { setQuestionIndex(i); setAnswerOpen(false) }}>{entry ? `${entry.chapterIndex + 1}-${q.number}` : q.number}</button> })}</div><div className="legend"><span><i/>未标记</span><span><i className="green"/>熟练</span><span><i className="yellow"/>模糊</span><span><i className="red"/>错题</span></div></nav>
         </div> : <div className="no-results"><Search size={32}/><h2>{view === 'wrong' && wrongQuestions.length === 0 ? '错题已经清空' : '没有符合条件的题目'}</h2><p>{view === 'wrong' && wrongQuestions.length === 0 ? '很好，继续练习其他章节巩固掌握情况。' : '尝试更换筛选条件或清空搜索词。'}</p><button onClick={() => view === 'wrong' && wrongQuestions.length === 0 ? setView('section') : (setFilter('all'), setQuery(''))}><RotateCcw size={16}/>{view === 'wrong' && wrongQuestions.length === 0 ? '返回当前小节' : '重置筛选'}</button></div>}
 
         {printMode && printJob && <section className="print-sheet" aria-hidden="true">

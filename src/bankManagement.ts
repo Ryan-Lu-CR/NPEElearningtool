@@ -4,6 +4,12 @@ export function questionIdsForBank(bank: QuestionBank) {
   return new Set(bank.chapters.flatMap(chapter => chapter.sections.flatMap(section => section.questions.map(question => question.id))))
 }
 
+export function orderedQuestionEntriesForBank(bank: QuestionBank) {
+  return bank.chapters.flatMap((chapter, chapterIndex) => chapter.sections.flatMap(section => [...section.questions]
+    .sort((left, right) => left.number - right.number)
+    .map(question => ({ question, chapterId: chapter.id, chapterName: chapter.name, chapterIndex, sectionId: section.id, sectionName: section.name }))))
+}
+
 export function assetKeysForBank(bank: QuestionBank) {
   return bank.chapters.flatMap(chapter => chapter.sections.flatMap(section => section.questions.flatMap(question => [...(question.imageKeys || []), ...(question.answerImageKeys || [])])))
 }
