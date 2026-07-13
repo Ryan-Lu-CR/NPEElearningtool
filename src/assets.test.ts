@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseImageFilename } from './assets'
+import { parseImageFilename, parseStructuredImagePath } from './assets'
 
 const ids = new Set(['question-1', 'math-limit-002'])
 
@@ -23,5 +23,21 @@ describe('parseImageFilename', () => {
     const results = Array.from({ length: 5000 }, (_, index) => parseImageFilename(`a__question-1__${index + 1}.jpg`, ids))
     expect(results).toHaveLength(5000)
     expect(results[4999]?.order).toBe(5000)
+  })
+})
+
+describe('parseStructuredImagePath', () => {
+  it('识别用户现有的三段数字文件名和 assets 文件夹标题', () => {
+    expect(parseStructuredImagePath('题库/01 行列式 1-基础.assets/01-1-01.png', '01-1-01.png')).toEqual({
+      chapterCode: '01', chapterName: '行列式', sectionCode: '1', sectionName: '基础', questionCode: '01', kind: 'question', order: 1
+    })
+  })
+
+  it('识别多张答案图和顺序', () => {
+    expect(parseStructuredImagePath('01 行列式 1-基础.assets/01-1-03-A-2.png', '01-1-03-A-2.png')).toMatchObject({ questionCode: '03', kind: 'answer', order: 2 })
+  })
+
+  it('没有文件夹标题时生成安全的默认名称', () => {
+    expect(parseStructuredImagePath('导入/02-3-08-Q-2.jpg', '02-3-08-Q-2.jpg')).toMatchObject({ chapterName: '第 02 章', sectionName: '第 3 节', kind: 'question', order: 2 })
   })
 })

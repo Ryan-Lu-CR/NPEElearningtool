@@ -45,6 +45,35 @@ export async function getAssetBlobs(keys: string[]): Promise<Blob[]> {
 export type ImageKind = 'question' | 'answer'
 export interface ImageMatch { questionId: string; kind: ImageKind; order: number }
 
+export interface StructuredImageMatch {
+  chapterCode: string
+  chapterName: string
+  sectionCode: string
+  sectionName: string
+  questionCode: string
+  kind: ImageKind
+  order: number
+}
+
+export function parseStructuredImagePath(relativePath: string, filename: string): StructuredImageMatch | null {
+  const basename = filename.replace(/\.[^.]+$/, '')
+  const fileMatch = basename.match(/^(\d+)-(\d+)-(\d+)(?:-(Q|A|题目|答案))?(?:-(\d+))?$/i)
+  if (!fileMatch) return null
+  const [, chapterCode, sectionCode, questionCode, kindToken, orderToken] = fileMatch
+  const folders = relativePath.split('/').slice(0, -1)
+  const folderPattern = new RegExp(`^0*${Number(chapterCode)}\\s*([^0-9]*?)\\s+0*${Number(sectionCode)}[-_ ](.+?)(?:\\.assets)?$`, 'i')
+  const folderMatch = folders.map(folder => folder.match(folderPattern)).find(Boolean)
+  return {
+    chapterCode,
+    chapterName: folderMatch?.[1]?.trim() || `第 ${chapterCode} 章`,
+    sectionCode,
+    sectionName: folderMatch?.[2]?.trim() || `第 ${sectionCode} 节`,
+    questionCode,
+    kind: /^(A|答案)$/i.test(kindToken || '') ? 'answer' : 'question',
+    order: Number(orderToken || 1)
+  }
+}
+
 export function parseImageFilename(filename: string, questionIds: Set<string>): ImageMatch | null {
   const basename = filename.replace(/\.[^.]+$/, '')
   const canonical = basename.match(/^(q|a)__(.+?)(?:__(\d+))?$/i)
