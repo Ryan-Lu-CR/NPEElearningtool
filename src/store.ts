@@ -1,10 +1,21 @@
-import type { QuestionBank, QuestionStatus } from './types'
-import { sampleBanks } from './data'
+import type { PartBKind, QuestionBank, QuestionStatus, ReadingQuestionType } from './types'
+import { builtInBanks } from './data'
 
 const BANKS_KEY = 'npee:banks:v1'
+const BUILTIN_SEED_KEY = 'npee:builtins:english-2004-2024:v6'
 const STATUS_KEY = 'npee:status:v1'
 const NAVIGATION_KEY = 'npee:navigation:v1'
 const VALID_STATUSES = new Set<QuestionStatus>(['none', 'proficient', 'vague', 'wrong'])
+const VALID_READING_TYPES = new Set<ReadingQuestionType>(['detail', 'example', 'main-idea', 'attitude', 'inference', 'vocabulary'])
+const VALID_PART_B_KINDS = new Set<PartBKind>(['ordering', 'sentence', 'subheading', 'viewpoint'])
+const REMOVED_BANK_IDS = new Set(['local-calculus', 'local-linear'])
+
+interface StoredBanksV2 {
+  version: 2
+  bankOrder: string[]
+  /** Only custom banks and user-modified built-ins are stored in full. */
+  banks: QuestionBank[]
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -27,16 +38,75 @@ function optionalStringArray(value: unknown, path: string) {
   return value.map(item => item.trim())
 }
 
-export function loadBanks(): QuestionBank[] {
-  try { const raw = localStorage.getItem(BANKS_KEY); return raw ? validateBanks(JSON.parse(raw)) : sampleBanks } catch { return sampleBanks }
+function trySetItem(key: string, value: string) {
+  try { localStorage.setItem(key, value); return true } catch { return false }
 }
-export function saveBanks(banks: QuestionBank[]) { localStorage.setItem(BANKS_KEY, JSON.stringify(banks)) }
+
+function decodeStoredBanks(value: unknown): QuestionBank[] {
+  if (!isRecord(value) || value.version !== 2) return validateBanks(value)
+  if (!Array.isArray(value.bankOrder) || !value.bankOrder.length || value.bankOrder.some(id => typeof id !== 'string' || !id))
+    throw new Error('题库缓存顺序无效')
+  const bankOrder = value.bankOrder as string[]
+  if (new Set(bankOrder).size !== bankOrder.length) throw new Error('题库缓存顺序包含重复项')
+  if (!Array.isArray(value.banks)) throw new Error('题库缓存内容无效')
+  const overrides = value.banks.length ? validateBanks(value.banks) : []
+  const overrideById = new Map(overrides.map(bank => [bank.id, bank]))
+  const builtInBankById = new Map(builtInBanks.map(bank => [bank.id, bank]))
+  if (overrides.some(bank => !bankOrder.includes(bank.id))) throw new Error('题库缓存包含无效条目')
+  const restored = bankOrder.map(id => overrideById.get(id) || builtInBankById.get(id)).filter((bank): bank is QuestionBank => Boolean(bank))
+  if (restored.length !== bankOrder.length) throw new Error('题库缓存引用不存在')
+  return validateBanks(structuredClone(restored))
+}
+
+function encodeStoredBanks(banks: QuestionBank[]): StoredBanksV2 {
+  const builtInBankJsonById = new Map(builtInBanks.map(bank => [bank.id, JSON.stringify(bank)]))
+  return {
+    version: 2,
+    bankOrder: banks.map(bank => bank.id),
+    banks: banks.filter(bank => builtInBankJsonById.get(bank.id) !== JSON.stringify(bank))
+  }
+}
+
+export function loadBanks(): QuestionBank[] {
+  try {
+    const raw = localStorage.getItem(BANKS_KEY)
+    if (!raw) {
+      trySetItem(BUILTIN_SEED_KEY, '1')
+      return structuredClone(builtInBanks)
+    }
+    const cached = decodeStoredBanks(JSON.parse(raw)).filter(bank => !REMOVED_BANK_IDS.has(bank.id))
+    if (localStorage.getItem(BUILTIN_SEED_KEY)) return cached
+    const englishIds = new Set(builtInBanks.filter(bank => bank.id.startsWith('english-')).map(bank => bank.id))
+    const cachedIds = new Set(cached.map(bank => bank.id))
+    const missingOtherBuiltIns = builtInBanks.filter(bank => !englishIds.has(bank.id) && !cachedIds.has(bank.id))
+    const refreshedEnglish = builtInBanks.filter(bank => englishIds.has(bank.id))
+    const seeded = [...cached.filter(bank => !englishIds.has(bank.id)), ...structuredClone(missingOtherBuiltIns), ...structuredClone(refreshedEnglish)]
+    saveBanks(seeded)
+    return seeded
+  } catch {
+    trySetItem(BUILTIN_SEED_KEY, '1')
+    return structuredClone(builtInBanks)
+  }
+}
+export function saveBanks(banks: QuestionBank[]) {
+  if (!trySetItem(BANKS_KEY, JSON.stringify(encodeStoredBanks(banks)))) return false
+  const englishBanks = banks.filter(bank => bank.id.startsWith('english-'))
+  const englishIsCurrent = englishBanks.length === 0 || englishBanks.every(bank => bank.chapters.every(chapter => chapter.sections.every(section => {
+    const isPartB = section.questions.some(question => question.type === '阅读理解 Part B')
+    return !isPartB || Boolean(section.partBKind)
+  })))
+  try {
+    if (englishIsCurrent) localStorage.setItem(BUILTIN_SEED_KEY, '1')
+    else localStorage.removeItem(BUILTIN_SEED_KEY)
+  } catch { return false }
+  return true
+}
 export function loadStatuses(): Record<string, QuestionStatus> {
   try {
     return validateStatuses(JSON.parse(localStorage.getItem(STATUS_KEY) || '{}'))
   } catch { return {} }
 }
-export function saveStatuses(statuses: Record<string, QuestionStatus>) { localStorage.setItem(STATUS_KEY, JSON.stringify(statuses)) }
+export function saveStatuses(statuses: Record<string, QuestionStatus>) { return trySetItem(STATUS_KEY, JSON.stringify(statuses)) }
 
 export interface NavigationState {
   bankId: string
@@ -53,7 +123,7 @@ export function loadNavigation(): NavigationState | null {
   } catch { return null }
 }
 
-export function saveNavigation(value: NavigationState) { localStorage.setItem(NAVIGATION_KEY, JSON.stringify(value)) }
+export function saveNavigation(value: NavigationState) { return trySetItem(NAVIGATION_KEY, JSON.stringify(value)) }
 
 export function renameBank(banks: QuestionBank[], bankId: string, name: string) {
   const trimmed = name.trim()
@@ -103,6 +173,10 @@ export function validateBanks(value: unknown): QuestionBank[] {
             return {
               id: uniqueId(rawSection.id, `${sectionPath}.id`),
               name: requiredString(rawSection.name, `${sectionPath}.name`),
+              passage: optionalString(rawSection.passage, `${sectionPath}.passage`),
+              passageImageUrls: optionalStringArray(rawSection.passageImageUrls, `${sectionPath}.passageImageUrls`),
+              partBKind: VALID_PART_B_KINDS.has(rawSection.partBKind as PartBKind) ? rawSection.partBKind as PartBKind : undefined,
+              partBSequence: optionalString(rawSection.partBSequence, `${sectionPath}.partBSequence`),
               questions: rawSection.questions.map((rawQuestion, questionIndex) => {
                 const questionPath = `${sectionPath}.questions[${questionIndex}]`
                 if (!isRecord(rawQuestion)) throw new Error(`${questionPath} 格式不正确`)
@@ -112,7 +186,9 @@ export function validateBanks(value: unknown): QuestionBank[] {
                 const type = optionalString(rawQuestion.type, `${questionPath}.type`)
                 const imageUrl = optionalString(rawQuestion.imageUrl, `${questionPath}.imageUrl`)
                 const imageKeys = optionalStringArray(rawQuestion.imageKeys, `${questionPath}.imageKeys`)
-                const text = typeof rawQuestion.text === 'string' && rawQuestion.text.trim() === '' && (type === '图片题' || imageUrl || imageKeys?.length)
+                const answerImageUrl = optionalString(rawQuestion.answerImageUrl, `${questionPath}.answerImageUrl`)
+                const answerImageKeys = optionalStringArray(rawQuestion.answerImageKeys, `${questionPath}.answerImageKeys`)
+                const text = typeof rawQuestion.text === 'string' && rawQuestion.text.trim() === '' && (type === '图片题' || imageUrl || imageKeys?.length || answerImageUrl || answerImageKeys?.length)
                   ? ''
                   : requiredString(rawQuestion.text, `${questionPath}.text`)
                 return {
@@ -124,10 +200,11 @@ export function validateBanks(value: unknown): QuestionBank[] {
                   answer: requiredString(rawQuestion.answer, `${questionPath}.answer`),
                   analysis: requiredString(rawQuestion.analysis, `${questionPath}.analysis`),
                   imageUrl,
-                  answerImageUrl: optionalString(rawQuestion.answerImageUrl, `${questionPath}.answerImageUrl`),
+                  answerImageUrl,
                   imageKeys,
-                  answerImageKeys: optionalStringArray(rawQuestion.answerImageKeys, `${questionPath}.answerImageKeys`),
-                  videoUrl: optionalString(rawQuestion.videoUrl, `${questionPath}.videoUrl`)
+                  answerImageKeys,
+                  videoUrl: optionalString(rawQuestion.videoUrl, `${questionPath}.videoUrl`),
+                  readingType: VALID_READING_TYPES.has(rawQuestion.readingType as ReadingQuestionType) ? rawQuestion.readingType as ReadingQuestionType : undefined
                 }
               })
             }

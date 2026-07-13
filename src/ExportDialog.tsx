@@ -3,6 +3,7 @@ import { Download, FileImage, FileText, X } from 'lucide-react'
 import { toBlob } from 'html-to-image'
 import AssetGallery from './AssetGallery'
 import type { Question, QuestionBank, QuestionStatus } from './types'
+import { isImageAnswerPlaceholder } from './questionPresentation'
 
 export interface ExportJob {
   title: string
@@ -50,12 +51,16 @@ export function ExportPage({ questions, includeAnswers, pageNumber, showType = t
   return <article className="export-page">
     {questions.map(question => {
       const text = (question.type === '图片题' || question.imageUrl || question.imageKeys?.length) && question.text === `第 ${question.number} 题` ? '' : question.text
+      const hasAnswerImages = Boolean(question.answerImageKeys?.length || question.answerImageUrl)
+      const answerIsImagePlaceholder = hasAnswerImages && isImageAnswerPlaceholder(question.answer)
       return <section className="export-question" key={question.id}>
         <div className="export-question-title"><strong>{String(question.number).padStart(2, '0')}</strong>{showType && question.type && <span>{question.type}</span>}</div>
         {text && <p>{text}</p>}
         <AssetGallery keys={question.imageKeys} urls={question.imageUrl ? [question.imageUrl] : []} alt="题目配图"/>
         {question.options?.map(option => <p className="export-option" key={option}>{option}</p>)}
-        {includeAnswers && <div className="export-answer"><b>答案：{question.answer}</b><p>{question.analysis}</p><AssetGallery keys={question.answerImageKeys} urls={question.answerImageUrl ? [question.answerImageUrl] : []} alt="答案配图"/></div>}
+        {includeAnswers && <div className={answerIsImagePlaceholder ? 'export-answer export-answer-images-only' : hasAnswerImages ? 'export-answer export-answer-with-images' : 'export-answer'}>{answerIsImagePlaceholder
+          ? <AssetGallery keys={question.answerImageKeys} urls={question.answerImageUrl ? [question.answerImageUrl] : []} alt="原版解析截图"/>
+          : <><b>答案：{question.answer}</b>{hasAnswerImages ? <AssetGallery keys={question.answerImageKeys} urls={question.answerImageUrl ? [question.answerImageUrl] : []} alt="原版解析截图"/> : <p>{question.analysis}</p>}</>}</div>}
       </section>
     })}
     <footer>第 {pageNumber} 页</footer>

@@ -4,6 +4,8 @@ const DB_NAME = 'npee-workspace'
 const STORE_NAME = 'handles'
 const HANDLE_KEY = 'question-bank-root'
 export const WORKSPACE_MANIFEST = '题库数据.json'
+export const WORKSPACE_USER_DATA = '用户数据.json'
+export const BUILTIN_ENGLISH_VERSION = 4
 
 type WritableDirectoryHandle = FileSystemDirectoryHandle & {
   queryPermission(options: { mode: 'readwrite' }): Promise<PermissionState>
@@ -21,15 +23,24 @@ export interface WorkspaceImageFile {
 
 export interface WorkspaceManifest {
   version: 1
+  builtinEnglishVersion?: number
   updatedAt: string
   banks: QuestionBank[]
-  statuses: Record<string, QuestionStatus>
+  /** 兼容旧版清单；新写入的项目数据不再包含用户标记。 */
+  statuses?: Record<string, QuestionStatus>
   folders?: Record<string, string>
+}
+
+export interface WorkspaceUserData {
+  version: 1
+  updatedAt: string
+  statuses: Record<string, QuestionStatus>
 }
 
 export interface DefaultWorkspaceIndex {
   name: string
   manifest: WorkspaceManifest | null
+  userData: WorkspaceUserData | null
   images: Array<{ name: string; relativePath: string; bankFolder: string; url: string }>
 }
 
@@ -39,10 +50,24 @@ export async function readDefaultWorkspace(): Promise<DefaultWorkspaceIndex> {
   return response.json() as Promise<DefaultWorkspaceIndex>
 }
 
-export async function writeDefaultWorkspaceManifest(banks: QuestionBank[], statuses: Record<string, QuestionStatus>, folders: Record<string, string> = {}) {
-  const manifest: WorkspaceManifest = { version: 1, updatedAt: new Date().toISOString(), banks, statuses, folders }
+export function createWorkspaceManifest(banks: QuestionBank[], folders: Record<string, string> = {}): WorkspaceManifest {
+  return { version: 1, builtinEnglishVersion: BUILTIN_ENGLISH_VERSION, updatedAt: new Date().toISOString(), banks, folders }
+}
+
+export function createWorkspaceUserData(statuses: Record<string, QuestionStatus>): WorkspaceUserData {
+  return { version: 1, updatedAt: new Date().toISOString(), statuses }
+}
+
+export async function writeDefaultWorkspaceManifest(banks: QuestionBank[], folders: Record<string, string> = {}) {
+  const manifest = createWorkspaceManifest(banks, folders)
   const response = await fetch('/api/default-workspace/manifest', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(manifest, null, 2) })
   if (!response.ok) throw new Error('默认题库数据写入失败')
+}
+
+export async function writeDefaultWorkspaceUserData(statuses: Record<string, QuestionStatus>) {
+  const userData = createWorkspaceUserData(statuses)
+  const response = await fetch('/api/default-workspace/user-data', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userData, null, 2) })
+  if (!response.ok) throw new Error('用户数据写入失败')
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -107,11 +132,17 @@ export async function chooseWorkspace() {
   return handle
 }
 
-export async function writeWorkspaceManifest(handle: FileSystemDirectoryHandle, banks: QuestionBank[], statuses: Record<string, QuestionStatus>, folders: Record<string, string> = {}) {
+export async function writeWorkspaceManifest(handle: FileSystemDirectoryHandle, banks: QuestionBank[], folders: Record<string, string> = {}) {
   const fileHandle = await handle.getFileHandle(WORKSPACE_MANIFEST, { create: true })
   const writable = await fileHandle.createWritable()
-  const manifest: WorkspaceManifest = { version: 1, updatedAt: new Date().toISOString(), banks, statuses, folders }
-  await writable.write(JSON.stringify(manifest, null, 2))
+  await writable.write(JSON.stringify(createWorkspaceManifest(banks, folders), null, 2))
+  await writable.close()
+}
+
+export async function writeWorkspaceUserData(handle: FileSystemDirectoryHandle, statuses: Record<string, QuestionStatus>) {
+  const fileHandle = await handle.getFileHandle(WORKSPACE_USER_DATA, { create: true })
+  const writable = await fileHandle.createWritable()
+  await writable.write(JSON.stringify(createWorkspaceUserData(statuses), null, 2))
   await writable.close()
 }
 
@@ -119,6 +150,16 @@ export async function readWorkspaceManifest(handle: FileSystemDirectoryHandle): 
   try {
     const file = await (await handle.getFileHandle(WORKSPACE_MANIFEST)).getFile()
     return JSON.parse(await file.text()) as WorkspaceManifest
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'NotFoundError') return null
+    throw error
+  }
+}
+
+export async function readWorkspaceUserData(handle: FileSystemDirectoryHandle): Promise<WorkspaceUserData | null> {
+  try {
+    const file = await (await handle.getFileHandle(WORKSPACE_USER_DATA)).getFile()
+    return JSON.parse(await file.text()) as WorkspaceUserData
   } catch (error) {
     if (error instanceof DOMException && error.name === 'NotFoundError') return null
     throw error
@@ -137,7 +178,7 @@ async function collectImages(directory: FileSystemDirectoryHandle, prefix: strin
 export async function scanWorkspaceImages(handle: FileSystemDirectoryHandle) {
   const output: WorkspaceImageFile[] = []
   for await (const [name, child] of handle.entries()) {
-    if (name.startsWith('.') || name === WORKSPACE_MANIFEST) continue
+    if (name.startsWith('.') || name === WORKSPACE_MANIFEST || name === WORKSPACE_USER_DATA) continue
     if (child.kind === 'directory') await collectImages(child, '', name, output)
     else if (/\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(name)) output.push({ file: await child.getFile(), relativePath: name, bankFolder: '' })
   }
