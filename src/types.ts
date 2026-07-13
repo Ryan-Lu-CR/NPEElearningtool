@@ -10,6 +10,8 @@ export interface Question {
   analysis: string
   imageUrl?: string
   answerImageUrl?: string
+  imageKeys?: string[]
+  answerImageKeys?: string[]
   videoUrl?: string
 }
 
