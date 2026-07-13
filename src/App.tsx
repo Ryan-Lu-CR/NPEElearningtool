@@ -228,7 +228,7 @@ export default function App() {
   }
   function exportData() {
     const blob = new Blob([JSON.stringify({ version: 1, banks, statuses }, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `本地题库备份-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url)
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `考研学习空间备份-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url)
   }
   function exportSingleBank(targetBank: QuestionBank) {
     const blob = new Blob([JSON.stringify({ version: 1, banks: [targetBank] }, null, 2)], { type: 'application/json' })
@@ -459,7 +459,7 @@ export default function App() {
   return <div className="app-shell">
     <header>
       <button className="mobile-menu" onClick={() => setSidebar(true)} aria-label="打开菜单"><Menu/></button>
-      <div className="brand"><span className="brand-mark"><BookOpen size={20}/></span><div><strong>本地题库</strong><small>QUESTION BANK</small></div></div>
+      <div className="brand"><span className="brand-mark"><BookOpen size={20}/></span><div><strong>考研学习空间</strong><small>NPEE STUDY SPACE</small></div></div>
       <nav className="subject-nav" aria-label="学科导航">
         <button className={subject === 'math' ? 'active' : ''} onClick={() => selectSubject('math')}>数学</button>
         <button className={subject === 'english' ? 'active' : ''} onClick={() => selectSubject('english')}>英语</button>

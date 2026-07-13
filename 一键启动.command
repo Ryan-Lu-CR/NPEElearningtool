@@ -37,7 +37,7 @@ fi
 echo "[3/4] 安装或更新项目依赖..."
 pnpm install
 
-echo "[4/4] 启动本地题库..."
+echo "[4/4] 启动考研学习空间..."
 echo "关闭此窗口即可停止服务。"
 (sleep 2; open "http://127.0.0.1:5173/") &
 exec pnpm dev --host 127.0.0.1
