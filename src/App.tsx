@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, BookOpen, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, Menu, Pencil, Plus, RotateCcw, Search, Settings as SettingsIcon, X } from 'lucide-react'
+import { AlertCircle, BookOpen, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, FolderSync, Menu, Pencil, Plus, RotateCcw, Search, Settings as SettingsIcon, X } from 'lucide-react'
 import type { Question, QuestionBank, QuestionStatus, Section } from './types'
 import { loadBanks, loadNavigation, loadStatuses, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, validateBanks, validateStatuses } from './store'
-import { clearAssets, deleteAssets, parseImageFilename, parseStructuredImagePath, putAssets, type StructuredImageMatch } from './assets'
+import { clearAssets, deleteAssets } from './assets'
 import AssetGallery from './AssetGallery'
 import ExportDialog, { ExportPage, type ExportJob } from './ExportDialog'
 import SettingsDialog from './SettingsDialog'
 import { assetKeysForBank, clearQuestionStatuses, orderedQuestionEntriesForBank, questionIdsForBank, removeBank, resetBankData } from './bankManagement'
 import { sampleBanks } from './data'
+import { mergeImageEntries } from './imageImport'
+import { chooseWorkspace, createBankFolder, hasWorkspacePermission, loadWorkspaceHandle, readWorkspaceManifest, removeBankFolder, safeFolderName, scanWorkspaceImages, writeWorkspaceManifest } from './workspace'
 
 const statusMeta: Record<QuestionStatus, { label: string; icon: string }> = {
   none: { label: '未标记', icon: '○' }, proficient: { label: '熟练', icon: '✓' }, vague: { label: '模糊', icon: '?' }, wrong: { label: '错题', icon: '×' }
@@ -35,11 +37,30 @@ export default function App() {
   const [renameTarget, setRenameTarget] = useState<{ kind: 'bank' | 'chapter'; id: string; name: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [navigationReady, setNavigationReady] = useState(false)
+  const [workspaceHandle, setWorkspaceHandle] = useState<FileSystemDirectoryHandle | null>(null)
+  const [workspaceState, setWorkspaceState] = useState<'none' | 'available' | 'syncing' | 'connected' | 'error'>('none')
+  const [workspaceFolders, setWorkspaceFolders] = useState<Record<string, string>>({})
+  const workspaceReady = useRef(false)
   const importRef = useRef<HTMLInputElement>(null)
   const imageImportRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => saveBanks(banks), [banks])
   useEffect(() => saveStatuses(statuses), [statuses])
+  useEffect(() => {
+    loadWorkspaceHandle().then(async handle => {
+      if (!handle) return
+      setWorkspaceHandle(handle)
+      if (await hasWorkspacePermission(handle)) await loadWorkspace(handle)
+      else setWorkspaceState('available')
+    }).catch(() => setWorkspaceState('error'))
+  }, [])
+  useEffect(() => {
+    if (!workspaceHandle || workspaceState !== 'connected' || !workspaceReady.current) return
+    const timer = window.setTimeout(() => {
+      writeWorkspaceManifest(workspaceHandle, banks, statuses, workspaceFolders).catch(() => setWorkspaceState('error'))
+    }, 450)
+    return () => window.clearTimeout(timer)
+  }, [banks, statuses, workspaceFolders, workspaceHandle, workspaceState])
   useEffect(() => {
     const saved = loadNavigation()
     if (saved) {
@@ -64,7 +85,6 @@ export default function App() {
 
   const bank = banks.find(b => b.id === bankId) || banks[0]
   const section: Section | undefined = bank?.chapters.flatMap(c => c.sections).find(s => s.id === sectionId)
-  const allQuestions = useMemo(() => banks.flatMap(b => b.chapters.flatMap(c => c.sections.flatMap(s => s.questions))), [banks])
   const bankQuestionEntries = useMemo(() => orderedQuestionEntriesForBank(bank), [bank])
   const wrongEntries = useMemo(() => bankQuestionEntries.filter(entry => statuses[entry.question.id] === 'wrong'), [bankQuestionEntries, statuses])
   const wrongQuestions = useMemo(() => wrongEntries.map(entry => entry.question), [wrongEntries])
@@ -106,6 +126,11 @@ export default function App() {
   }
   async function resetManagedBank(targetBank: QuestionBank) {
     await deleteAssets(assetKeysForBank(targetBank)); const baseline = sampleBanks.find(item => item.id === targetBank.id)
+    const folderName = workspaceFolders[targetBank.id]
+    if (workspaceHandle && workspaceState === 'connected' && folderName) {
+      await removeBankFolder(workspaceHandle, folderName).catch(() => {})
+      if (!baseline) await workspaceHandle.getDirectoryHandle(folderName, { create: true })
+    }
     setStatuses(previous => clearQuestionStatuses(previous, banks, targetBank.id, 'all')); setBanks(previous => resetBankData(previous, targetBank.id, baseline))
     if (bankId === targetBank.id) { setSectionId(baseline?.chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setView('section') }
     setToast(baseline ? '内置题库已恢复' : '自建题库内容已清空')
@@ -113,6 +138,9 @@ export default function App() {
   async function deleteManagedBank(targetBank: QuestionBank) {
     if (banks.length <= 1) { setToast('至少需要保留一个题库'); return }
     await deleteAssets(assetKeysForBank(targetBank)); const ids = questionIdsForBank(targetBank)
+    const folderName = workspaceFolders[targetBank.id]
+    if (workspaceHandle && workspaceState === 'connected' && folderName) await removeBankFolder(workspaceHandle, folderName).catch(() => {})
+    setWorkspaceFolders(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => id !== targetBank.id)))
     setStatuses(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => !ids.has(id))))
     const remaining = removeBank(banks, targetBank.id); setBanks(remaining)
     if (bankId === targetBank.id) selectBank(remaining[0]); setToast(`已删除“${targetBank.name}”`)
@@ -145,74 +173,68 @@ export default function App() {
   async function importImages(fileList?: FileList | null) {
     const files = Array.from(fileList || []).filter(file => file.type.startsWith('image/'))
     if (!files.length) { setToast('所选目录中没有图片文件'); return }
-    const questionIds = new Set(allQuestions.map(item => item.id))
-    const updates = new Map<string, { question: Array<{ key: string; order: number }>; answer: Array<{ key: string; order: number }> }>()
-    const structuredQuestions = new Map<string, StructuredImageMatch>()
-    const assets = [] as Array<{ key: string; file: File }>
-    let skipped = 0
-    for (const file of files) {
-      let match = parseImageFilename(file.name, questionIds)
-      if (!match) {
-        const structured = parseStructuredImagePath(file.webkitRelativePath || file.name, file.name)
-        if (structured) {
-          const questionId = `${bank.id}-${structured.chapterCode}-${structured.sectionCode}-${structured.questionCode}`
-          match = { questionId, kind: structured.kind, order: structured.order }
-          structuredQuestions.set(questionId, structured)
-        }
-      }
-      if (!match) { skipped++; continue }
-      const key = `${match.questionId}/${match.kind}/${match.order}-${file.name}`
-      const update = updates.get(match.questionId) || { question: [], answer: [] }
-      update[match.kind].push({ key, order: match.order }); updates.set(match.questionId, update); assets.push({ key, file })
-    }
-    if (!assets.length) { setToast(`没有图片匹配题目 ID，已跳过 ${skipped} 个文件`); return }
     try {
-      await putAssets(assets)
-      const definitions = [...structuredQuestions.entries()]
-      setBanks(previous => {
-        const expanded = previous.map(item => {
-          if (item.id !== bank.id || !definitions.length) return item
-          const clone = structuredClone(item)
-          for (const [questionId, definition] of definitions) {
-            const chapterId = `${bank.id}-chapter-${definition.chapterCode}`
-            const sectionIdForImport = `${chapterId}-section-${definition.sectionCode}`
-            let chapter = clone.chapters.find(entry => entry.id === chapterId)
-            if (!chapter) { chapter = { id: chapterId, name: definition.chapterName, sections: [] }; clone.chapters.push(chapter) }
-            let targetSection = chapter.sections.find(entry => entry.id === sectionIdForImport)
-            if (!targetSection) { targetSection = { id: sectionIdForImport, name: definition.sectionName, questions: [] }; chapter.sections.push(targetSection) }
-            const existingQuestion = targetSection.questions.find(entry => entry.id === questionId)
-            if (!existingQuestion) targetSection.questions.push({ id: questionId, number: Number(definition.questionCode), text: '', answer: '见答案图片', analysis: '暂无文字解析' })
-            else if ((existingQuestion.type === '图片题' || existingQuestion.imageUrl || existingQuestion.imageKeys?.length) && existingQuestion.text === `第 ${existingQuestion.number} 题`) existingQuestion.text = ''
-            targetSection.questions.sort((a, b) => a.number - b.number)
-          }
-          clone.chapters.sort((a, b) => a.id.localeCompare(b.id, 'zh-CN', { numeric: true }))
-          return clone
-        })
-        return expanded.map(item => ({ ...item, chapters: item.chapters.map(chapter => ({ ...chapter, sections: chapter.sections.map(currentSection => ({ ...currentSection, questions: currentSection.questions.map(currentQuestion => {
-        const update = updates.get(currentQuestion.id)
-        if (!update) return currentQuestion
-        const questionKeys = update.question.sort((a, b) => a.order - b.order).map(entry => entry.key)
-        const answerKeys = update.answer.sort((a, b) => a.order - b.order).map(entry => entry.key)
-        return {
-          ...currentQuestion,
-          imageKeys: [...new Set([...(currentQuestion.imageKeys || []), ...questionKeys])],
-          answerImageKeys: [...new Set([...(currentQuestion.answerImageKeys || []), ...answerKeys])]
-        }
-      }) })) })) }))
-      })
-      const firstDefinition = definitions[0]?.[1]
-      if (firstDefinition) {
-        setSectionId(`${bank.id}-chapter-${firstDefinition.chapterCode}-section-${firstDefinition.sectionCode}`)
-        setView('section')
-      }
-      setToast(`已导入 ${assets.length} 张图片，匹配 ${updates.size} 道题${structuredQuestions.size ? `，自动新建/补全 ${structuredQuestions.size} 道` : ''}${skipped ? `，跳过 ${skipped} 张` : ''}`)
+      const result = await mergeImageEntries(banks, files.map(file => ({ file, relativePath: file.webkitRelativePath || file.name, bankId: bank.id })))
+      if (!result.imported) { setToast(`没有图片符合命名规则，已跳过 ${result.skipped} 个文件`); return }
+      setBanks(result.banks)
+      if (result.firstSectionId) { setSectionId(result.firstSectionId); setView('section') }
+      setToast(`已导入 ${result.imported} 张图片，匹配 ${result.matchedQuestions} 道题${result.createdQuestions ? `，自动新建/补全 ${result.createdQuestions} 道` : ''}${result.skipped ? `，跳过 ${result.skipped} 张` : ''}`)
     } catch (error) { setToast(error instanceof Error ? error.message : '图片导入失败') }
     if (imageImportRef.current) imageImportRef.current.value = ''
   }
-  function createBank() {
+
+  async function loadWorkspace(handle: FileSystemDirectoryHandle) {
+    setWorkspaceState('syncing')
+    try {
+      if (!await hasWorkspacePermission(handle, true)) throw new Error('未获得题库文件夹读写权限')
+      const manifest = await readWorkspaceManifest(handle)
+      let nextBanks = manifest ? validateBanks(manifest) : structuredClone(banks)
+      const nextStatuses = manifest?.statuses ? validateStatuses(manifest.statuses) : statuses
+      const images = await scanWorkspaceImages(handle)
+      const folders = { ...(manifest?.folders || {}) }
+      for (const folderName of new Set(images.map(item => item.bankFolder).filter(Boolean))) {
+        let target = nextBanks.find(item => folders[item.id] === folderName || safeFolderName(item.name) === folderName)
+        if (!target) {
+          const id = `workspace-${Date.now()}-${nextBanks.length}`
+          target = { id, name: folderName, description: '本地文件夹题库', source: 'local', chapters: [] }
+          nextBanks.push(target)
+        }
+        folders[target!.id] = folderName
+      }
+      const entries = images.map(item => {
+        const target = item.bankFolder
+          ? nextBanks.find(bank => folders[bank.id] === item.bankFolder)
+          : nextBanks.find(bank => bank.id === bankId) || nextBanks[0]
+        return { file: item.file, relativePath: item.relativePath, bankId: target!.id }
+      })
+      const result = await mergeImageEntries(nextBanks, entries)
+      workspaceReady.current = false
+      setBanks(result.banks); setStatuses(nextStatuses); setWorkspaceFolders(folders); setWorkspaceHandle(handle)
+      setWorkspaceState('connected')
+      window.setTimeout(() => { workspaceReady.current = true; writeWorkspaceManifest(handle, result.banks, nextStatuses, folders).catch(() => setWorkspaceState('error')) }, 0)
+      setToast(`已连接“${handle.name}”${result.imported ? `，同步 ${result.imported} 张图片` : ''}`)
+    } catch (error) {
+      setWorkspaceState('error'); setToast(error instanceof Error ? error.message : '题库文件夹同步失败')
+    }
+  }
+
+  async function connectWorkspace() {
+    try {
+      const handle = workspaceHandle && await hasWorkspacePermission(workspaceHandle, true) ? workspaceHandle : await chooseWorkspace()
+      await loadWorkspace(handle)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      setWorkspaceState('error'); setToast(error instanceof Error ? error.message : '无法连接题库文件夹')
+    }
+  }
+  async function createBank() {
     const name = newBankName.trim()
     if (!name) { setToast('请输入题库名称'); return }
     const created: QuestionBank = { id: `local-${Date.now()}`, name, description: '自建本地题库', source: 'local', chapters: [] }
+    if (workspaceHandle && workspaceState === 'connected') {
+      const folderName = await createBankFolder(workspaceHandle, Object.values(workspaceFolders).includes(safeFolderName(name)) ? `${name}-${Date.now()}` : name)
+      setWorkspaceFolders(previous => ({ ...previous, [created.id]: folderName }))
+    }
     setBanks(previous => [...previous, created]); setBankId(created.id); setSectionId(''); setView('section'); setNewBankName(''); setNewBankOpen(false); setToast(`已新建“${name}”，现在可以批量导入图片`)
   }
   function openRename(kind: 'bank' | 'chapter', id: string, name: string) { setRenameTarget({ kind, id, name }); setRenameValue(name) }
@@ -229,10 +251,11 @@ export default function App() {
     <header>
       <button className="mobile-menu" onClick={() => setSidebar(true)} aria-label="打开菜单"><Menu/></button>
       <div className="brand"><span className="brand-mark"><BookOpen size={20}/></span><div><strong>本地题库</strong><small>QUESTION BANK</small></div></div>
-      <div className="header-center"><span className="source-dot"/>本地增强模式 · 数据与位置自动保存</div>
+      <div className="header-center"><span className={`source-dot ${workspaceState === 'connected' ? 'workspace-on' : ''}`}/>{workspaceState === 'connected' ? `已同步：${workspaceHandle?.name}` : workspaceState === 'syncing' ? '正在同步题库文件夹…' : '本地增强模式 · 数据与位置自动保存'}</div>
       <div className="header-actions">
         <input ref={importRef} hidden type="file" accept=".json,application/json" onChange={e => importData(e.target.files?.[0])}/>
         <input ref={node => { imageImportRef.current = node; node?.setAttribute('webkitdirectory', '') }} hidden type="file" multiple accept="image/*" onChange={e => importImages(e.target.files)}/>
+        <button className={workspaceState === 'connected' ? 'ghost workspace-connected' : 'ghost'} title="连接本地题库文件夹并实时同步" onClick={connectWorkspace}><FolderSync size={17}/>{workspaceState === 'connected' ? '已连接' : '文件夹'}</button>
         <button className="ghost" onClick={() => importRef.current?.click()}><FileUp size={17}/>导入</button>
         <button className="ghost" title="批量导入题目图和答案图" onClick={() => imageImportRef.current?.click()}><FileImage size={17}/>图片</button>
         <button className="icon-ghost" title="查看图片命名参考" aria-label="图片命名参考" onClick={() => setNamingHelpOpen(true)}><CircleHelp size={18}/></button>
