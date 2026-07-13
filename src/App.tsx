@@ -244,17 +244,16 @@ export default function App() {
       <aside className={sidebar ? 'open' : ''}>
         <div className="aside-mobile-title"><strong>题库导航</strong><button onClick={() => setSidebar(false)}><X/></button></div>
         <p className="eyebrow">题库类型</p>
+        <div className="bank-select-row"><span className="bank-select-icon"><BookOpen size={17}/></span><select aria-label="选择题库" value={bank.id} onChange={event => { const selected = banks.find(item => item.id === event.target.value); if (selected) selectBank(selected) }}>{banks.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="rename-button" aria-label={`重命名题库 ${bank.name}`} onClick={() => openRename('bank', bank.id, bank.name)}><Pencil size={13}/></button></div>
+        <div className="selected-bank-meta">{bank.description || (bank.source === 'local' ? '本地题库' : '远程题库')} · {bank.chapters.length} 章</div>
         <button className="new-bank-button" onClick={() => setNewBankOpen(true)}><Plus size={16}/>新建题库</button>
-        <div className="bank-list">{banks.map(b => <div className="bank-row" key={b.id}><button className={b.id === bank.id ? 'bank active' : 'bank'} onClick={() => selectBank(b)}>
-          <span className="book-icon"><BookOpen size={17}/></span><span><strong>{b.name}</strong><small>{b.description || (b.source === 'local' ? '本地题库' : '远程题库')}</small></span><ChevronRight size={17}/>
-        </button><button className="rename-button" aria-label={`重命名题库 ${b.name}`} onClick={() => openRename('bank', b.id, b.name)}><Pencil size={13}/></button></div>)}</div>
         <button className={view === 'wrong' ? 'wrong-book active' : 'wrong-book'} onClick={showWrongBook}><AlertCircle size={17}/><span><strong>全局错题本</strong><small>汇总所有题库中的错题</small></span><em>{counts.wrong}</em></button>
         <div className="divider"/>
         <p className="eyebrow">章节导航</p>
-        <div className="chapter-tree">{bank.chapters.map(chapter => <div className="chapter" key={chapter.id}>
+        <div className="chapter-scroll"><div className="chapter-tree">{bank.chapters.map(chapter => <div className="chapter" key={chapter.id}>
           <div className="chapter-title"><ChevronDown size={16}/><span>{chapter.name}</span><button className="rename-button" aria-label={`重命名章节 ${chapter.name}`} onClick={() => openRename('chapter', chapter.id, chapter.name)}><Pencil size={12}/></button></div>
           {chapter.sections.map(s => <button key={s.id} onClick={() => selectSection(s.id)} className={s.id === sectionId ? 'section active' : 'section'}><span>{s.name}</span><em>{s.questions.length}</em></button>)}
-        </div>)}</div>
+        </div>)}{bank.chapters.length === 0 && <div className="empty-chapters">还没有章节<br/><small>点击顶部“图片”批量导入</small></div>}</div></div>
         <div className="aside-summary"><strong>学习概览</strong><div><span><i className="green"/>{counts.proficient} 熟练</span><span><i className="yellow"/>{counts.vague} 模糊</span><span><i className="red"/>{counts.wrong} 错题</span></div></div>
       </aside>
 
