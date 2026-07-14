@@ -1,27 +1,53 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { QuestionBank, QuestionStatus } from './types'
 import { sortBanksForDisplay } from './bankSorting'
 import { calculateLearningStats, calculateQuestionStats, formatRate } from './learningStats'
+import { calculateDailyActivity, localDateKey, type StudyActivity } from './studyActivity'
 
 interface LearningDashboardProps {
   banks: QuestionBank[]
   statuses: Record<string, QuestionStatus>
+  activities: StudyActivity[]
   selectedBankId: string
   onSelectedBankIdChange: (bankId: string) => void
 }
 
 const bankSubject = (bank: QuestionBank) => bank.id.startsWith('english-') || /英语/i.test(bank.name) ? '英语' : '数学'
 
-export default function LearningDashboard({ banks, statuses, selectedBankId, onSelectedBankIdChange }: LearningDashboardProps) {
+export default function LearningDashboard({ banks, statuses, activities, selectedBankId, onSelectedBankIdChange }: LearningDashboardProps) {
   const overall = calculateLearningStats(banks, statuses)
   const orderedBanks = [...sortBanksForDisplay(banks.filter(bank => bankSubject(bank) === '数学')), ...sortBanksForDisplay(banks.filter(bank => bankSubject(bank) === '英语'))]
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(() => new Set())
+  const today = localDateKey()
+  const [calendarMonth, setCalendarMonth] = useState(today.slice(0, 7))
+  const [selectedDate, setSelectedDate] = useState(today)
   const selectedBank = orderedBanks.find(bank => bank.id === selectedBankId) || orderedBanks[0]
   const selectedBankIsEnglish = selectedBank ? bankSubject(selectedBank) === '英语' : false
   const selectedStats = selectedBank ? calculateLearningStats([selectedBank], statuses) : null
   const details = orderedBanks
     .map(bank => ({ bank, stats: calculateLearningStats([bank], statuses) }))
+  const [calendarYear, calendarMonthNumber] = calendarMonth.split('-').map(Number)
+  const firstDay = new Date(calendarYear, calendarMonthNumber - 1, 1)
+  const leadingDays = (firstDay.getDay() + 6) % 7
+  const daysInMonth = new Date(calendarYear, calendarMonthNumber, 0).getDate()
+  const monthActivities = activities.filter(item => item.date.startsWith(`${calendarMonth}-`))
+  const dailyActivities = new Map<string, StudyActivity[]>()
+  monthActivities.forEach(item => dailyActivities.set(item.date, [...(dailyActivities.get(item.date) || []), item]))
+  const selectedActivities = dailyActivities.get(selectedDate) || []
+  const selectedDayStats = calculateDailyActivity(selectedActivities)
+  const monthStats = calculateDailyActivity(monthActivities)
+  const activeDays = dailyActivities.size
+  const selectedBankGroups = orderedBanks.map(bank => ({ bank, activities: selectedActivities.filter(item => item.bankId === bank.id) })).filter(item => item.activities.length)
+
+  function changeCalendarMonth(offset: number) {
+    const next = new Date(calendarYear, calendarMonthNumber - 1 + offset, 1)
+    const nextMonth = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+    setCalendarMonth(nextMonth)
+    setSelectedDate(`${nextMonth}-01`)
+  }
+
+  function returnToToday() { setCalendarMonth(today.slice(0, 7)); setSelectedDate(today) }
 
   useEffect(() => {
     if (selectedBank && selectedBank.id !== selectedBankId) onSelectedBankIdChange(selectedBank.id)
@@ -44,6 +70,26 @@ export default function LearningDashboard({ banks, statuses, selectedBankId, onS
       <div><i className="yellow"/><span>模糊</span><strong>{overall.vague}</strong></div>
       <div><i className="red"/><span>错题 / 错误</span><strong>{overall.wrong}</strong></div>
     </div>
+    <section className="activity-calendar-panel">
+      <div className="activity-calendar-heading"><div><span>DAILY ACTIVITY</span><h2><CalendarDays size={19}/>学习日历</h2><p>同一道题同一天只统计一次，以当天最终标记状态为准。</p></div><div className="calendar-month-actions"><button onClick={() => changeCalendarMonth(-1)} aria-label="上个月"><ChevronLeft size={17}/></button><strong>{calendarYear} 年 {calendarMonthNumber} 月</strong><button onClick={() => changeCalendarMonth(1)} aria-label="下个月"><ChevronRight size={17}/></button><button className="calendar-today" onClick={returnToToday}>今天</button></div></div>
+      <div className="activity-calendar-body">
+        <div className="calendar-area">
+          <div className="calendar-weekdays">{['一', '二', '三', '四', '五', '六', '日'].map(day => <span key={day}>{day}</span>)}</div>
+          <div className="calendar-grid">{Array.from({ length: leadingDays }, (_, index) => <span className="calendar-day empty" key={`empty-${index}`}/>)}{Array.from({ length: daysInMonth }, (_, index) => {
+            const day = index + 1
+            const date = `${calendarMonth}-${String(day).padStart(2, '0')}`
+            const stats = calculateDailyActivity(dailyActivities.get(date) || [])
+            return <button key={date} className={`calendar-day${date === selectedDate ? ' selected' : ''}${date === today ? ' today' : ''}${stats.total ? ' active' : ''}`} onClick={() => setSelectedDate(date)}><span>{day}</span>{stats.total > 0 && <><strong>{stats.total} 题</strong><i><b className="green" style={{ flex: stats.proficient }}/><b className="yellow" style={{ flex: stats.vague }}/><b className="red" style={{ flex: stats.wrong }}/></i></>}</button>
+          })}</div>
+        </div>
+        <aside className="calendar-summary">
+          <div className="month-summary"><span>本月学习</span><strong>{monthStats.total}<small>题</small></strong><p>{activeDays} 个学习日 · 正确率 {formatRate(monthStats.accuracy)}</p></div>
+          <div className="selected-day-summary"><span>{selectedDate === today ? '今天' : `${Number(selectedDate.slice(5, 7))} 月 ${Number(selectedDate.slice(8, 10))} 日`}</span><strong>{selectedDayStats.total ? `${selectedDayStats.total} 题` : '暂无记录'}</strong>{selectedDayStats.total > 0 && <><p>正确率 {formatRate(selectedDayStats.accuracy)}</p><div><span className="green-text">{selectedDayStats.proficient} 正确</span><span className="yellow-text">{selectedDayStats.vague} 模糊</span><span className="red-text">{selectedDayStats.wrong} 错误</span></div></>}</div>
+          {selectedBankGroups.length > 0 && <div className="day-bank-breakdown">{selectedBankGroups.map(({ bank, activities: bankActivities }) => { const stats = calculateDailyActivity(bankActivities); return <div key={bank.id}><span>{bank.name}</span><strong>{stats.total} 题 · {formatRate(stats.accuracy)}</strong></div> })}</div>}
+          {!activities.length && <p className="calendar-start-note">日历记录从本次升级后开始，已有标记仍保留在上方总览中。</p>}
+        </aside>
+      </div>
+    </section>
     {selectedBank && selectedStats && <section className="section-progress-panel">
       <div className="section-progress-heading"><div><span>BANK DETAILS</span><h2>{selectedBank.name}</h2><p>{selectedBank.chapters.length} 个章节 · {selectedStats.marked} / {selectedStats.total} 道题已标记</p></div><div><span>题库正确率</span><strong>{formatRate(selectedStats.accuracy)}</strong></div></div>
       <div className="chapter-progress-list">{selectedBank.chapters.map((chapter, chapterIndex) => {

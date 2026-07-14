@@ -1,4 +1,5 @@
 import type { QuestionBank, QuestionStatus } from './types'
+import type { StudyActivity } from './studyActivity'
 
 const DB_NAME = 'npee-workspace'
 const STORE_NAME = 'handles'
@@ -35,6 +36,7 @@ export interface WorkspaceUserData {
   version: 1
   updatedAt: string
   statuses: Record<string, QuestionStatus>
+  activities?: StudyActivity[]
 }
 
 export interface DefaultWorkspaceIndex {
@@ -54,8 +56,8 @@ export function createWorkspaceManifest(banks: QuestionBank[], folders: Record<s
   return { version: 1, builtinEnglishVersion: BUILTIN_ENGLISH_VERSION, updatedAt: new Date().toISOString(), banks, folders }
 }
 
-export function createWorkspaceUserData(statuses: Record<string, QuestionStatus>): WorkspaceUserData {
-  return { version: 1, updatedAt: new Date().toISOString(), statuses }
+export function createWorkspaceUserData(statuses: Record<string, QuestionStatus>, activities: StudyActivity[] = []): WorkspaceUserData {
+  return { version: 1, updatedAt: new Date().toISOString(), statuses, activities }
 }
 
 export async function writeDefaultWorkspaceManifest(banks: QuestionBank[], folders: Record<string, string> = {}) {
@@ -64,8 +66,8 @@ export async function writeDefaultWorkspaceManifest(banks: QuestionBank[], folde
   if (!response.ok) throw new Error('默认题库数据写入失败')
 }
 
-export async function writeDefaultWorkspaceUserData(statuses: Record<string, QuestionStatus>) {
-  const userData = createWorkspaceUserData(statuses)
+export async function writeDefaultWorkspaceUserData(statuses: Record<string, QuestionStatus>, activities: StudyActivity[] = []) {
+  const userData = createWorkspaceUserData(statuses, activities)
   const response = await fetch('/api/default-workspace/user-data', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userData, null, 2) })
   if (!response.ok) throw new Error('用户数据写入失败')
 }
@@ -139,10 +141,10 @@ export async function writeWorkspaceManifest(handle: FileSystemDirectoryHandle, 
   await writable.close()
 }
 
-export async function writeWorkspaceUserData(handle: FileSystemDirectoryHandle, statuses: Record<string, QuestionStatus>) {
+export async function writeWorkspaceUserData(handle: FileSystemDirectoryHandle, statuses: Record<string, QuestionStatus>, activities: StudyActivity[] = []) {
   const fileHandle = await handle.getFileHandle(WORKSPACE_USER_DATA, { create: true })
   const writable = await fileHandle.createWritable()
-  await writable.write(JSON.stringify(createWorkspaceUserData(statuses), null, 2))
+  await writable.write(JSON.stringify(createWorkspaceUserData(statuses, activities), null, 2))
   await writable.close()
 }
 

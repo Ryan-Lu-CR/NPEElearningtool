@@ -1,10 +1,12 @@
 import type { PartBKind, QuestionBank, QuestionStatus, ReadingQuestionType } from './types'
 import { builtInBanks } from './data'
+import { mergeStudyActivities, validateStudyActivities, type StudyActivity } from './studyActivity'
 
 const BANKS_KEY = 'npee:banks:v1'
 const BUILTIN_SEED_KEY = 'npee:builtins:english-exams:v8'
 const STATUS_KEY = 'npee:status:v1'
 const NAVIGATION_KEY = 'npee:navigation:v1'
+const ACTIVITY_KEY = 'npee:activity:v1'
 const VALID_STATUSES = new Set<QuestionStatus>(['none', 'proficient', 'vague', 'wrong'])
 const VALID_READING_TYPES = new Set<ReadingQuestionType>(['detail', 'example', 'main-idea', 'attitude', 'inference', 'vocabulary'])
 const VALID_PART_B_KINDS = new Set<PartBKind>(['ordering', 'sentence', 'subheading', 'viewpoint'])
@@ -112,6 +114,10 @@ export function loadStatuses(): Record<string, QuestionStatus> {
   } catch { return {} }
 }
 export function saveStatuses(statuses: Record<string, QuestionStatus>) { return trySetItem(STATUS_KEY, JSON.stringify(statuses)) }
+export function loadStudyActivities(): StudyActivity[] {
+  try { return mergeStudyActivities(validateStudyActivities(JSON.parse(localStorage.getItem(ACTIVITY_KEY) || '[]'))) } catch { return [] }
+}
+export function saveStudyActivities(activities: StudyActivity[]) { return trySetItem(ACTIVITY_KEY, JSON.stringify(activities)) }
 
 export interface NavigationState {
   bankId: string

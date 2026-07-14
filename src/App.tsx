@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, BookOpen, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, FolderOpen, FolderSync, Menu, Pencil, Plus, RotateCcw, Search, Settings as SettingsIcon, X } from 'lucide-react'
 import type { Question, QuestionBank, QuestionStatus, ReadingQuestionType, Section } from './types'
-import { loadBanks, loadNavigation, loadStatuses, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, validateBanks, validateStatuses } from './store'
+import { loadBanks, loadNavigation, loadStatuses, loadStudyActivities, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, saveStudyActivities, validateBanks, validateStatuses } from './store'
 import { deleteAssets } from './assets'
 import AssetGallery from './AssetGallery'
 import ExportDialog, { ExportPage, type ExportJob } from './ExportDialog'
@@ -14,6 +14,7 @@ import { formatPassageParagraphs } from './passageFormatting'
 import { isImageAnswerPlaceholder } from './questionPresentation'
 import { sortBanksForDisplay } from './bankSorting'
 import LearningDashboard from './LearningDashboard'
+import { mergeStudyActivities, updateStudyActivity, validateStudyActivities } from './studyActivity'
 import { calculateLearningStats, calculateQuestionStats, formatRate } from './learningStats'
 import { resolveNavigation, resolveProfileBankId, type SavedNavigation } from './navigationRestore'
 
@@ -45,6 +46,7 @@ const protectedBankIds = new Set<string>(defaultBankIds)
 export default function App() {
   const [banks, setBanks] = useState(loadBanks)
   const [statuses, setStatuses] = useState(loadStatuses)
+  const [activities, setActivities] = useState(loadStudyActivities)
   const [bankId, setBankId] = useState(banks[0]?.id || '')
   const [sectionId, setSectionId] = useState(banks[0]?.chapters[0]?.sections[0]?.id || '')
   const [questionIndex, setQuestionIndex] = useState(0)
@@ -79,6 +81,7 @@ export default function App() {
 
   useEffect(() => { if (!saveBanks(banks)) setToast('浏览器存储空间不足，题库修改尚未保存；请连接题库文件夹或先导出备份') }, [banks])
   useEffect(() => { if (!saveStatuses(statuses)) setToast('学习标记保存失败，请先导出备份后检查浏览器存储空间') }, [statuses])
+  useEffect(() => { if (!saveStudyActivities(activities)) setToast('每日学习记录保存失败，请先导出备份后检查浏览器存储空间') }, [activities])
   useEffect(() => {
     loadWorkspaceHandle().then(async handle => {
       if (!handle) { await loadDefaultWorkspace(); return }
@@ -106,12 +109,12 @@ export default function App() {
     if (workspaceState !== 'connected' || !workspaceReady.current) return
     const timer = window.setTimeout(() => {
       const save = defaultWorkspaceConnected
-        ? writeDefaultWorkspaceUserData(statuses)
-        : workspaceHandle ? writeWorkspaceUserData(workspaceHandle, statuses) : Promise.resolve()
+        ? writeDefaultWorkspaceUserData(statuses, activities)
+        : workspaceHandle ? writeWorkspaceUserData(workspaceHandle, statuses, activities) : Promise.resolve()
       save.catch(() => setWorkspaceState('error'))
     }, 450)
     return () => window.clearTimeout(timer)
-  }, [statuses, workspaceHandle, workspaceState, defaultWorkspaceConnected])
+  }, [statuses, activities, workspaceHandle, workspaceState, defaultWorkspaceConnected])
   useEffect(() => {
     restoreSavedNavigation(banks, statuses)
     setNavigationReady(true)
@@ -219,6 +222,7 @@ export default function App() {
   function markQuestion(questionId: string, status: QuestionStatus, targetQuestion?: Question) {
     const item = targetQuestion || bankQuestionEntries.find(entry => entry.question.id === questionId)?.question
     setStatuses(prev => ({ ...prev, [questionId]: status })); setToast(`已标记为“${questionStatusMeta(item, status, binaryFilterMode).label}”`)
+    setActivities(previous => updateStudyActivity(previous, { questionId, bankId: bank.id, status }))
   }
   function mark(status: QuestionStatus) { if (question) markQuestion(question.id, status, question) }
   function togglePassageAnswer(questionId: string) {
@@ -263,7 +267,7 @@ export default function App() {
     return <label className="reading-type-picker"><span>阅读题型</span><select aria-label={`第 ${item.number} 题阅读题型`} value={item.readingType || ''} onChange={event => markReadingType(item.id, event.target.value as ReadingQuestionType | '')}><option value="">未分类</option>{readingTypeMeta.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select><ChevronDown size={13}/></label>
   }
   function exportData() {
-    const blob = new Blob([JSON.stringify({ version: 1, banks, statuses }, null, 2)], { type: 'application/json' })
+    const blob = new Blob([JSON.stringify({ version: 1, banks, statuses, activities }, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `考研学习空间备份-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url)
   }
   function exportSingleBank(targetBank: QuestionBank) {
@@ -306,7 +310,7 @@ export default function App() {
     const removableBanks = banks.filter(item => !protectedBankIds.has(item.id))
     await deleteAssets(removableBanks.flatMap(assetKeysForBank))
     const defaults = [...structuredClone(protectedBanks), ...structuredClone(builtInBanks).filter(item => !protectedBankIds.has(item.id))]
-    setBanks(defaults); setStatuses({}); setBankId(defaults[0].id); setSectionId(defaults[0].chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setView('section'); setSettingsOpen(false); setToast('已恢复出厂设置，默认题库已保留')
+    setBanks(defaults); setStatuses({}); setActivities([]); setBankId(defaults[0].id); setSectionId(defaults[0].chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setView('section'); setSettingsOpen(false); setToast('已恢复出厂设置，默认题库已保留')
   }
   function printExport(job: ExportJob) {
     if (!job.questions.length) { setToast('当前条件下没有可导出的题目'); return }
@@ -321,6 +325,7 @@ export default function App() {
       const parsed = JSON.parse(await file.text()); const imported = validateBanks(parsed)
       setBanks(prev => [...prev.filter(b => !imported.some(i => i.id === b.id)), ...imported])
       if (parsed.statuses) setStatuses(prev => ({ ...prev, ...validateStatuses(parsed.statuses) }))
+      if (parsed.activities) setActivities(previous => mergeStudyActivities(previous, validateStudyActivities(parsed.activities)))
       setToast(`成功导入 ${imported.length} 个题库`)
     } catch (e) { setToast(e instanceof Error ? e.message : '导入失败') }
     if (importRef.current) importRef.current.value = ''
@@ -348,6 +353,7 @@ export default function App() {
       }
       const storedStatuses = index.userData?.statuses || index.manifest?.statuses
       const nextStatuses = storedStatuses ? validateStatuses(storedStatuses) : statuses
+      const nextActivities = index.userData?.activities ? validateStudyActivities(index.userData.activities) : activities
       const folders = { ...(index.manifest?.folders || {}) }
       for (const folderName of new Set(index.images.map(item => item.bankFolder).filter(Boolean))) {
         let target = nextBanks.find(item => folders[item.id] === folderName || safeFolderName(item.name) === folderName)
@@ -370,7 +376,7 @@ export default function App() {
         }
       }
       workspaceReady.current = false
-      setBanks(result.banks); setStatuses(nextStatuses); setWorkspaceFolders(folders); setWorkspaceHandle(null); setDefaultWorkspaceConnected(true); setWorkspaceState('connected')
+      setBanks(result.banks); setStatuses(nextStatuses); setActivities(nextActivities); setWorkspaceFolders(folders); setWorkspaceHandle(null); setDefaultWorkspaceConnected(true); setWorkspaceState('connected')
       window.setTimeout(() => {
         workspaceReady.current = true
       }, 0)
@@ -395,6 +401,7 @@ export default function App() {
       }
       const storedStatuses = userData?.statuses || manifest?.statuses
       const nextStatuses = storedStatuses ? validateStatuses(storedStatuses) : statuses
+      const nextActivities = userData?.activities ? validateStudyActivities(userData.activities) : activities
       const images = await scanWorkspaceImages(handle, Object.values(manifest?.folders || {}))
       const folders = { ...(manifest?.folders || {}) }
       for (const folderName of new Set(images.map(item => item.bankFolder).filter(Boolean))) {
@@ -423,7 +430,7 @@ export default function App() {
         }
       }
       workspaceReady.current = false
-      setBanks(result.banks); setStatuses(nextStatuses); setWorkspaceFolders(folders); setWorkspaceHandle(handle); setDefaultWorkspaceConnected(false)
+      setBanks(result.banks); setStatuses(nextStatuses); setActivities(nextActivities); setWorkspaceFolders(folders); setWorkspaceHandle(handle); setDefaultWorkspaceConnected(false)
       setWorkspaceState('connected')
       window.setTimeout(() => {
         workspaceReady.current = true
@@ -463,7 +470,7 @@ export default function App() {
   async function switchWorkspace() {
     try {
       if (workspaceHandle && workspaceState === 'connected') {
-        void Promise.all([writeWorkspaceManifest(workspaceHandle, banks, workspaceFolders), writeWorkspaceUserData(workspaceHandle, statuses)]).catch(() => {})
+        void Promise.all([writeWorkspaceManifest(workspaceHandle, banks, workspaceFolders), writeWorkspaceUserData(workspaceHandle, statuses, activities)]).catch(() => {})
       }
       const handle = await chooseWorkspace()
       await loadWorkspace(handle)
@@ -541,7 +548,7 @@ export default function App() {
       </aside></>}
 
       <main className={activePage === 'profile' ? 'profile-main' : ''}>
-        {activePage === 'profile' ? <LearningDashboard banks={banks} statuses={statuses} selectedBankId={profileBankId} onSelectedBankIdChange={setProfileBankId}/> : <>
+        {activePage === 'profile' ? <LearningDashboard banks={banks} statuses={statuses} activities={activities} selectedBankId={profileBankId} onSelectedBankIdChange={setProfileBankId}/> : <>
         <div className="page-head"><div><span className="breadcrumb">{bank.name} <ChevronRight size={13}/>{view === 'section' && currentChapter && <>{currentChapter.name} <ChevronRight size={13}/></>}{view === 'wrong' ? '本题库错题本' : section?.name || '未选择'}</span><h1>{view === 'wrong' ? '本题库错题本' : section?.name || '请选择具体节题目'}</h1><p>{view === 'wrong' ? `按章节和题号排列 · 共 ${wrongQuestions.length} 道错题` : section ? `共 ${section.questions.length} 道题 · 学习进度实时保存` : '从左侧选择一个章节开始学习'}</p></div>
           <div className="search"><Search size={17}/><input value={query} onChange={e => { setQuery(e.target.value); setQuestionIndex(0) }} placeholder={view === 'wrong' ? '搜索全部错题' : '搜索当前小节'}/></div>
         </div>

@@ -18,8 +18,10 @@ describe('workspace data separation', () => {
   })
 
   it('writes statuses only to user data', () => {
-    const userData = createWorkspaceUserData({ 'question-1': 'wrong' })
+    const activities = [{ date: '2026-07-14', questionId: 'question-1', bankId: 'bank-1', status: 'wrong' as const, updatedAt: '2026-07-14T02:00:00.000Z' }]
+    const userData = createWorkspaceUserData({ 'question-1': 'wrong' }, activities)
     expect(userData.statuses).toEqual({ 'question-1': 'wrong' })
+    expect(userData.activities).toEqual(activities)
     expect(userData).not.toHaveProperty('banks')
     expect(userData).not.toHaveProperty('folders')
   })
