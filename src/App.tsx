@@ -15,6 +15,7 @@ import { isImageAnswerPlaceholder } from './questionPresentation'
 import { sortBanksForDisplay } from './bankSorting'
 import LearningDashboard from './LearningDashboard'
 import { calculateLearningStats, calculateQuestionStats, formatRate } from './learningStats'
+import { resolveNavigation } from './navigationRestore'
 
 const statusMeta: Record<QuestionStatus, { label: string; icon: string }> = {
   none: { label: '未标记', icon: '○' }, proficient: { label: '熟练', icon: '✓' }, vague: { label: '模糊', icon: '?' }, wrong: { label: '错题', icon: '×' }
@@ -110,20 +111,7 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [statuses, workspaceHandle, workspaceState, defaultWorkspaceConnected])
   useEffect(() => {
-    const saved = loadNavigation()
-    if (saved) {
-      const savedBank = banks.find(item => item.id === saved.bankId) || banks.find(item => item.chapters.some(chapter => chapter.sections.some(section => section.id === saved.sectionId)))
-      const savedSection = savedBank?.chapters.flatMap(chapter => chapter.sections).find(item => item.id === saved.sectionId)
-      if (savedBank && savedSection) {
-        const savedQuestions = saved.view === 'wrong'
-          ? orderedQuestionEntriesForBank(savedBank).map(entry => entry.question).filter(item => statuses[item.id] === 'wrong')
-          : savedSection.questions
-        const savedChapter = savedBank.chapters.find(chapter => chapter.sections.some(item => item.id === savedSection.id))
-        setBankId(savedBank.id); setSectionId(savedSection.id); setView(saved.view)
-        if (savedChapter) setExpandedChapterIds(new Set([savedChapter.id]))
-        setQuestionIndex(Math.max(0, savedQuestions.findIndex(item => item.id === saved.questionId)))
-      }
-    }
+    restoreSavedNavigation(banks, statuses)
     setNavigationReady(true)
   }, [])
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 2600); return () => clearTimeout(timer) }, [toast])
@@ -181,6 +169,13 @@ export default function App() {
 
   function selectBank(next: QuestionBank) {
     setBankId(next.id); setSectionId(next.chapters[0]?.sections[0]?.id || ''); setExpandedChapterIds(new Set(next.chapters[0] ? [next.chapters[0].id] : [])); setQuestionIndex(0); setAnswerOpen(false); setExpandedPassageAnswers(new Set()); setFilter('all'); setView('section'); setSidebar(false)
+  }
+  function restoreSavedNavigation(targetBanks: QuestionBank[], targetStatuses: Record<string, QuestionStatus>) {
+    const restored = resolveNavigation(targetBanks, targetStatuses, loadNavigation())
+    if (!restored) return false
+    setBankId(restored.bankId); setSectionId(restored.sectionId); setExpandedChapterIds(new Set([restored.chapterId])); setQuestionIndex(restored.questionIndex); setView(restored.view)
+    setAnswerOpen(false); setExpandedPassageAnswers(new Set()); setFilter('all'); setQuery('')
+    return true
   }
   function selectSubject(nextSubject: Subject) {
     const nextBank = sortBanksForDisplay(banks.filter(item => bankSubject(item) === nextSubject))[0]
@@ -346,10 +341,12 @@ export default function App() {
         return { file: new File([], item.name), relativePath: item.relativePath, bankId: target!.id, assetUrl: item.url }
       })
       const result = await mergeImageEntries(nextBanks, entries, { replaceExistingAssets: true })
-      const activeBank = result.banks.find(item => item.id === bankId) || result.banks[0]
-      const activeSections = activeBank?.chapters.flatMap(chapter => chapter.sections) || []
-      if (activeBank && !activeSections.some(item => item.id === sectionId)) {
-        setBankId(activeBank.id); setSectionId(activeSections[0]?.id || ''); setQuestionIndex(0)
+      if (!restoreSavedNavigation(result.banks, nextStatuses)) {
+        const activeBank = result.banks.find(item => item.id === bankId) || result.banks[0]
+        const activeSections = activeBank?.chapters.flatMap(chapter => chapter.sections) || []
+        if (activeBank && !activeSections.some(item => item.id === sectionId)) {
+          setBankId(activeBank.id); setSectionId(activeSections[0]?.id || ''); setQuestionIndex(0)
+        }
       }
       workspaceReady.current = false
       setBanks(result.banks); setStatuses(nextStatuses); setWorkspaceFolders(folders); setWorkspaceHandle(null); setDefaultWorkspaceConnected(true); setWorkspaceState('connected')
@@ -395,12 +392,14 @@ export default function App() {
         return { file: item.file, relativePath: item.relativePath, bankId: target!.id, assetUrl: URL.createObjectURL(item.file) }
       })
       const result = await mergeImageEntries(nextBanks, entries, { replaceExistingAssets: true })
-      const activeBank = result.banks.find(item => item.id === bankId) || result.banks[0]
-      const activeSections = activeBank?.chapters.flatMap(chapter => chapter.sections) || []
-      if (activeBank && !activeSections.some(item => item.id === sectionId)) {
-        setBankId(activeBank.id)
-        setSectionId(activeSections[0]?.id || '')
-        setQuestionIndex(0)
+      if (!restoreSavedNavigation(result.banks, nextStatuses)) {
+        const activeBank = result.banks.find(item => item.id === bankId) || result.banks[0]
+        const activeSections = activeBank?.chapters.flatMap(chapter => chapter.sections) || []
+        if (activeBank && !activeSections.some(item => item.id === sectionId)) {
+          setBankId(activeBank.id)
+          setSectionId(activeSections[0]?.id || '')
+          setQuestionIndex(0)
+        }
       }
       workspaceReady.current = false
       setBanks(result.banks); setStatuses(nextStatuses); setWorkspaceFolders(folders); setWorkspaceHandle(handle); setDefaultWorkspaceConnected(false)
