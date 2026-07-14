@@ -75,3 +75,8 @@
     margin-bottom: 12px;
   }
 }
+
+.answer-analysis.combined-image-answer {
+  border-top: 0;
+  padding-top: 0;
+}
