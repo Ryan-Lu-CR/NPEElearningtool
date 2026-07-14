@@ -118,13 +118,22 @@ export interface NavigationState {
   sectionId: string
   questionId: string
   view: 'section' | 'wrong'
+  page: 'study' | 'profile'
+  profileBankId: string
 }
 
 export function loadNavigation(): NavigationState | null {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(NAVIGATION_KEY) || 'null')
     if (!isRecord(value) || typeof value.bankId !== 'string' || typeof value.sectionId !== 'string' || typeof value.questionId !== 'string') return null
-    return { bankId: value.bankId, sectionId: value.sectionId, questionId: value.questionId, view: value.view === 'wrong' ? 'wrong' : 'section' }
+    return {
+      bankId: value.bankId,
+      sectionId: value.sectionId,
+      questionId: value.questionId,
+      view: value.view === 'wrong' ? 'wrong' : 'section',
+      page: value.page === 'profile' ? 'profile' : 'study',
+      profileBankId: typeof value.profileBankId === 'string' ? value.profileBankId : '',
+    }
   } catch { return null }
 }
 

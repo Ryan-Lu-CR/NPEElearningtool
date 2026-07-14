@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { QuestionBank } from './types'
-import { resolveNavigation } from './navigationRestore'
+import { resolveNavigation, resolveProfileBankId } from './navigationRestore'
 
 const bank: QuestionBank = { id: 'math', name: '数学', source: 'local', chapters: [{ id: 'chapter', name: '章', sections: [
   { id: 'first-section', name: '第一节', questions: [{ id: 'q1', number: 1, text: '1', answer: '1', analysis: '1' }] },
@@ -27,5 +27,12 @@ describe('navigation restore', () => {
 
   it('falls back to the first question if the saved question no longer exists', () => {
     expect(resolveNavigation([bank], {}, { bankId: 'math', sectionId: 'saved-section', questionId: 'missing', view: 'section' })?.questionIndex).toBe(0)
+  })
+
+  it('restores the selected profile bank and migrates old English ids', () => {
+    const english = { ...bank, id: 'english-exams' }
+    expect(resolveProfileBankId([bank, english], 'english-exams')).toBe('english-exams')
+    expect(resolveProfileBankId([bank, english], 'english-2024')).toBe('english-exams')
+    expect(resolveProfileBankId([bank, english], 'missing')).toBe('math')
   })
 })

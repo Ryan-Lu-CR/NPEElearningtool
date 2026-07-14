@@ -7,14 +7,15 @@ import { calculateLearningStats, calculateQuestionStats, formatRate } from './le
 interface LearningDashboardProps {
   banks: QuestionBank[]
   statuses: Record<string, QuestionStatus>
+  selectedBankId: string
+  onSelectedBankIdChange: (bankId: string) => void
 }
 
 const bankSubject = (bank: QuestionBank) => bank.id.startsWith('english-') || /英语/i.test(bank.name) ? '英语' : '数学'
 
-export default function LearningDashboard({ banks, statuses }: LearningDashboardProps) {
+export default function LearningDashboard({ banks, statuses, selectedBankId, onSelectedBankIdChange }: LearningDashboardProps) {
   const overall = calculateLearningStats(banks, statuses)
   const orderedBanks = [...sortBanksForDisplay(banks.filter(bank => bankSubject(bank) === '数学')), ...sortBanksForDisplay(banks.filter(bank => bankSubject(bank) === '英语'))]
-  const [selectedBankId, setSelectedBankId] = useState(orderedBanks[0]?.id || '')
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(() => new Set())
   const selectedBank = orderedBanks.find(bank => bank.id === selectedBankId) || orderedBanks[0]
   const selectedBankIsEnglish = selectedBank ? bankSubject(selectedBank) === '英语' : false
@@ -23,12 +24,13 @@ export default function LearningDashboard({ banks, statuses }: LearningDashboard
     .map(bank => ({ bank, stats: calculateLearningStats([bank], statuses) }))
 
   useEffect(() => {
-    if (selectedBank && selectedBank.id !== selectedBankId) setSelectedBankId(selectedBank.id)
-  }, [selectedBank, selectedBankId])
+    if (selectedBank && selectedBank.id !== selectedBankId) onSelectedBankIdChange(selectedBank.id)
+  }, [selectedBank, selectedBankId, onSelectedBankIdChange])
+  useEffect(() => { setExpandedSectionIds(new Set()) }, [selectedBankId])
 
   return <section className="learning-dashboard">
     <div className="learning-top"><div className="learning-heading"><span>MY LEARNING</span><h1>我的学习数据</h1><p>正确率仅按已标记题目计算，未标记题目不会影响结果。</p></div>
-      <label className="dashboard-bank-picker"><span>查看题库详情</span><select value={selectedBank?.id || ''} onChange={event => { setSelectedBankId(event.target.value); setExpandedSectionIds(new Set()) }}>{orderedBanks.map(bank => <option key={bank.id} value={bank.id}>{bank.name}</option>)}</select></label>
+      <label className="dashboard-bank-picker"><span>查看题库详情</span><select value={selectedBank?.id || ''} onChange={event => onSelectedBankIdChange(event.target.value)}>{orderedBanks.map(bank => <option key={bank.id} value={bank.id}>{bank.name}</option>)}</select></label>
     </div>
     <div className="learning-metrics">
       <article><span>当前正确率</span><strong>{formatRate(overall.accuracy)}</strong><small>{overall.marked ? `${overall.proficient} / ${overall.marked} 道已标记题` : '完成标记后开始统计'}</small></article>

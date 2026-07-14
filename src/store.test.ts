@@ -166,8 +166,13 @@ describe('rename', () => {
 
 describe('navigation recovery', () => {
   it('保存并恢复最后学习位置', () => {
-    saveNavigation({ bankId: 'bank-1', sectionId: 'section-1', questionId: 'question-1', view: 'section' })
-    expect(loadNavigation()).toEqual({ bankId: 'bank-1', sectionId: 'section-1', questionId: 'question-1', view: 'section' })
+    saveNavigation({ bankId: 'bank-1', sectionId: 'section-1', questionId: 'question-1', view: 'section', page: 'profile', profileBankId: 'english-exams' })
+    expect(loadNavigation()).toEqual({ bankId: 'bank-1', sectionId: 'section-1', questionId: 'question-1', view: 'section', page: 'profile', profileBankId: 'english-exams' })
+  })
+
+  it('兼容未记录我的板块的旧版位置', () => {
+    localStorage.setItem('npee:navigation:v1', JSON.stringify({ bankId: 'bank-1', sectionId: 'section-1', questionId: 'question-1', view: 'section' }))
+    expect(loadNavigation()).toMatchObject({ page: 'study', profileBankId: '' })
   })
 
   it('损坏的位置记录会被安全忽略', () => {

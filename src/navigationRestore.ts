@@ -39,3 +39,10 @@ export function resolveNavigation(
     view: saved.view,
   }
 }
+
+export function resolveProfileBankId(banks: QuestionBank[], savedBankId: string) {
+  return banks.find(bank => bank.id === savedBankId)?.id
+    || (savedBankId.startsWith('english-') ? banks.find(bank => bank.id === 'english-exams')?.id : undefined)
+    || banks[0]?.id
+    || ''
+}

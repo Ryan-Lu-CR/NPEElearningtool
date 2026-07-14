@@ -15,7 +15,7 @@ import { isImageAnswerPlaceholder } from './questionPresentation'
 import { sortBanksForDisplay } from './bankSorting'
 import LearningDashboard from './LearningDashboard'
 import { calculateLearningStats, calculateQuestionStats, formatRate } from './learningStats'
-import { resolveNavigation } from './navigationRestore'
+import { resolveNavigation, resolveProfileBankId } from './navigationRestore'
 
 const statusMeta: Record<QuestionStatus, { label: string; icon: string }> = {
   none: { label: '未标记', icon: '○' }, proficient: { label: '熟练', icon: '✓' }, vague: { label: '模糊', icon: '?' }, wrong: { label: '错题', icon: '×' }
@@ -55,6 +55,7 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [sidebar, setSidebar] = useState(false)
   const [activePage, setActivePage] = useState<'study' | 'profile'>('study')
+  const [profileBankId, setProfileBankId] = useState('')
   const [view, setView] = useState<'section' | 'wrong'>('section')
   const [toast, setToast] = useState('')
   const [printMode, setPrintMode] = useState(false)
@@ -164,15 +165,19 @@ export default function App() {
 
   useEffect(() => {
     if (!navigationReady) return
-    saveNavigation({ bankId: bank?.id || '', sectionId, questionId: question?.id || '', view })
-  }, [navigationReady, bank?.id, sectionId, question?.id, view])
+    saveNavigation({ bankId: bank?.id || '', sectionId, questionId: question?.id || '', view, page: activePage, profileBankId })
+  }, [navigationReady, bank?.id, sectionId, question?.id, view, activePage, profileBankId])
 
   function selectBank(next: QuestionBank) {
     setBankId(next.id); setSectionId(next.chapters[0]?.sections[0]?.id || ''); setExpandedChapterIds(new Set(next.chapters[0] ? [next.chapters[0].id] : [])); setQuestionIndex(0); setAnswerOpen(false); setExpandedPassageAnswers(new Set()); setFilter('all'); setView('section'); setSidebar(false)
   }
   function restoreSavedNavigation(targetBanks: QuestionBank[], targetStatuses: Record<string, QuestionStatus>) {
-    const restored = resolveNavigation(targetBanks, targetStatuses, loadNavigation())
-    if (!restored) return false
+    const saved = loadNavigation()
+    if (!saved) return false
+    setProfileBankId(resolveProfileBankId(targetBanks, saved.profileBankId || saved.bankId))
+    setActivePage(saved.page)
+    const restored = resolveNavigation(targetBanks, targetStatuses, saved)
+    if (!restored) return saved.page === 'profile'
     setBankId(restored.bankId); setSectionId(restored.sectionId); setExpandedChapterIds(new Set([restored.chapterId])); setQuestionIndex(restored.questionIndex); setView(restored.view)
     setAnswerOpen(false); setExpandedPassageAnswers(new Set()); setFilter('all'); setQuery('')
     return true
@@ -478,7 +483,7 @@ export default function App() {
       <nav className="subject-nav" aria-label="学科导航">
         <button className={activePage === 'study' && subject === 'math' ? 'active' : ''} onClick={() => selectSubject('math')}>数学</button>
         <button className={activePage === 'study' && subject === 'english' ? 'active' : ''} onClick={() => selectSubject('english')}>英语</button>
-        <button className={activePage === 'profile' ? 'active' : ''} onClick={() => { setActivePage('profile'); setSidebar(false) }}>我的</button>
+        <button className={activePage === 'profile' ? 'active' : ''} onClick={() => { if (!profileBankId) setProfileBankId(bank.id); setActivePage('profile'); setSidebar(false) }}>我的</button>
       </nav>
       <div className="header-center"><span className={`source-dot ${workspaceState === 'connected' ? 'workspace-on' : ''}`}/>{workspaceState === 'connected' ? `已同步：${defaultWorkspaceConnected ? '默认题库' : workspaceHandle?.name}` : workspaceState === 'syncing' ? '正在同步题库文件夹…' : '本地增强模式 · 数据与位置自动保存'}</div>
       <div className="header-actions">
@@ -520,7 +525,7 @@ export default function App() {
       </aside></>}
 
       <main className={activePage === 'profile' ? 'profile-main' : ''}>
-        {activePage === 'profile' ? <LearningDashboard banks={banks} statuses={statuses}/> : <>
+        {activePage === 'profile' ? <LearningDashboard banks={banks} statuses={statuses} selectedBankId={profileBankId} onSelectedBankIdChange={setProfileBankId}/> : <>
         <div className="page-head"><div><span className="breadcrumb">{bank.name} <ChevronRight size={13}/>{view === 'section' && currentChapter && <>{currentChapter.name} <ChevronRight size={13}/></>}{view === 'wrong' ? '本题库错题本' : section?.name || '未选择'}</span><h1>{view === 'wrong' ? '本题库错题本' : section?.name || '请选择具体节题目'}</h1><p>{view === 'wrong' ? `按章节和题号排列 · 共 ${wrongQuestions.length} 道错题` : section ? `共 ${section.questions.length} 道题 · 学习进度实时保存` : '从左侧选择一个章节开始学习'}</p></div>
           <div className="search"><Search size={17}/><input value={query} onChange={e => { setQuery(e.target.value); setQuestionIndex(0) }} placeholder={view === 'wrong' ? '搜索全部错题' : '搜索当前小节'}/></div>
         </div>
