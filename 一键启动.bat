@@ -26,7 +26,7 @@ if errorlevel 1 goto :error
 
 echo [4/4] Starting question bank...
 start "" http://127.0.0.1:5173/
-call pnpm dev --host 127.0.0.1
+call pnpm start
 exit /b %errorlevel%
 
 :error

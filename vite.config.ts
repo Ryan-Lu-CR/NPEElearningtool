@@ -7,6 +7,7 @@ import react from '@vitejs/plugin-react'
 const MANIFEST = '题库数据.json'
 const USER_DATA = '用户数据.json'
 const IMAGE_PATTERN = /\.(png|jpe?g|webp|gif|bmp|avif)$/i
+const STRUCTURED_IMAGE_PATTERN = /^(?:Q|A)-\d+-\d+-\d+(?:\.\d+)?\.(?:png|jpe?g|webp|gif|bmp|avif)$/i
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
   '.gif': 'image/gif', '.bmp': 'image/bmp', '.avif': 'image/avif'
@@ -15,16 +16,27 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
 function defaultWorkspacePlugin(): Plugin {
   const root = path.resolve(process.cwd(), '默认题库')
   const userDataRoot = path.resolve(process.cwd(), '用户数据')
-  async function scan(directory = root, bankFolder = '', prefix = ''): Promise<Array<{ name: string; relativePath: string; bankFolder: string; url: string }>> {
+  function resolveBankPath(relativePath: string, bankFolders: string[]) {
+    const knownFolder = [...bankFolders]
+      .sort((left, right) => right.length - left.length)
+      .find(folder => relativePath.startsWith(`${folder}/`))
+    if (knownFolder) return { bankFolder: knownFolder, relativePath: relativePath.slice(knownFolder.length + 1) }
+    const separator = relativePath.indexOf('/')
+    return separator < 0
+      ? { bankFolder: '', relativePath }
+      : { bankFolder: relativePath.slice(0, separator), relativePath: relativePath.slice(separator + 1) }
+  }
+  async function scan(bankFolders: string[], directory = root, prefix = ''): Promise<Array<{ name: string; relativePath: string; bankFolder: string; url: string }>> {
     const output: Array<{ name: string; relativePath: string; bankFolder: string; url: string }> = []
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (entry.name.startsWith('.') || entry.name === MANIFEST) continue
       const absolute = path.join(directory, entry.name)
       const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name
-      if (entry.isDirectory()) output.push(...await scan(absolute, bankFolder || entry.name, bankFolder ? relativePath : ''))
-      else if (entry.isFile() && IMAGE_PATTERN.test(entry.name)) {
+      if (entry.isDirectory()) output.push(...await scan(bankFolders, absolute, relativePath))
+      else if (entry.isFile() && STRUCTURED_IMAGE_PATTERN.test(entry.name)) {
         const modified = (await stat(absolute)).mtimeMs
-        output.push({ name: entry.name, relativePath, bankFolder, url: `/api/default-workspace/file?path=${encodeURIComponent(path.relative(root, absolute))}&v=${modified}` })
+        const resolved = resolveBankPath(relativePath, bankFolders)
+        output.push({ name: entry.name, ...resolved, url: `/api/default-workspace/file?path=${encodeURIComponent(path.relative(root, absolute))}&v=${modified}` })
       }
     }
     return output
@@ -37,7 +49,8 @@ function defaultWorkspacePlugin(): Plugin {
           try { manifest = JSON.parse(await readFile(path.join(root, MANIFEST), 'utf8')) } catch {}
           try { userData = JSON.parse(await readFile(path.join(userDataRoot, USER_DATA), 'utf8')) } catch {}
           response.setHeader('Content-Type', 'application/json; charset=utf-8')
-          response.end(JSON.stringify({ name: '默认题库', manifest, userData, images: await scan() }))
+          const bankFolders = Object.values((manifest as { folders?: Record<string, string> } | null)?.folders || {})
+          response.end(JSON.stringify({ name: '默认题库', manifest, userData, images: await scan(bankFolders) }))
         } catch (error) { response.statusCode = 500; response.end(error instanceof Error ? error.message : '默认题库扫描失败') }
       })
       server.middlewares.use('/api/default-workspace/file', async (request, response) => {
@@ -82,6 +95,9 @@ function defaultWorkspacePlugin(): Plugin {
   }
   return {
     name: 'default-question-bank-workspace',
+    handleHotUpdate(context) {
+      if (path.resolve(context.file) === path.join(root, MANIFEST)) return []
+    },
     configureServer: configureWorkspaceServer,
     configurePreviewServer: configureWorkspaceServer
   }

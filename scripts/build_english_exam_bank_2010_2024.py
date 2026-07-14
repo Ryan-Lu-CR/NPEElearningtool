@@ -7,11 +7,13 @@ import argparse
 import copy
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pdfplumber
 
 import build_english_exam_bank as legacy
+from english_bank_structure import merge_english_banks
 
 
 # Keys are grouped as 1-20, 21-40 and 41-45 to make auditing easier.
@@ -94,7 +96,7 @@ def main() -> None:
         bank["name"] = f"{year}年考研英语一真题"
         banks.append(bank)
 
-    payload = {"version": 1, "banks": banks}
+    payload = merge_english_banks({"version": 1, "banks": banks})
     for path in [args.output, args.standalone]:
         if path:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,9 +104,10 @@ def main() -> None:
 
     if args.merge_builtin:
         current = json.loads(args.merge_builtin.read_text(encoding="utf-8"))
-        kept = [bank for bank in current.get("banks", []) if not re.fullmatch(r"english-20(?:1\d|2[0-4])", bank.get("id", ""))]
-        merged = copy.deepcopy({"version": 1, "banks": kept + banks})
-        args.merge_builtin.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+        merged = copy.deepcopy(current)
+        merge_english_banks(merged, banks)
+        merged["updatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        args.merge_builtin.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     print(json.dumps({"banks": len(banks), "questions": sum(len(s["questions"]) for b in banks for c in b["chapters"] for s in c["sections"])}, ensure_ascii=False))
 

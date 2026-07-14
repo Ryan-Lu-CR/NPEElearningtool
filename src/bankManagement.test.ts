@@ -27,9 +27,14 @@ describe('bank management', () => {
   it('按章节顺序和题号升序生成题目列表', () => {
     const unsorted = structuredClone(bank)
     unsorted.chapters[0].sections[0].questions.reverse()
+    unsorted.chapters[0].sections.push({ id: 's2', name: '第二节', questions: [
+      { id: 'q3', number: 3, text: '', answer: 'a', analysis: 'a' },
+    ] })
     const entries = orderedQuestionEntriesForBank(unsorted)
-    expect(entries.map(entry => entry.question.number)).toEqual([1, 2])
+    expect(entries.map(entry => entry.question.number)).toEqual([1, 2, 3])
     expect(entries[0].chapterIndex).toBe(0)
     expect(entries[0].chapterName).toBe('章')
+    expect(entries[2].sectionId).toBe('s2')
+    expect(entries[2].sectionName).toBe('第二节')
   })
 })

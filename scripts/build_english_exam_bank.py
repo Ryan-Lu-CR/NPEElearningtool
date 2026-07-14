@@ -16,8 +16,11 @@ import io
 import json
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 import pdfplumber
+
+from english_bank_structure import merge_english_banks
 
 
 ANSWER_KEYS = {
@@ -354,13 +357,14 @@ def main() -> None:
     banks = []
     for year in range(2004, 2010):
         banks.append(build_year(year, papers / f"{year}年考研英语真题.pdf", analyses / f"{year}年考研英语真题解析.pdf"))
-    payload = {"version": 1, "banks": banks}
+    payload = merge_english_banks({"version": 1, "banks": banks})
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.builtin_output and args.asset_dir:
-        builtin_payload = copy.deepcopy(payload)
-        args.asset_dir.mkdir(parents=True, exist_ok=True)
-        for bank in builtin_payload["banks"]:
+        builtin_year_banks = copy.deepcopy(banks)
+        for bank in builtin_year_banks:
+            bank_asset_dir = args.asset_dir / "英语一真题" / bank["name"] / "资源"
+            bank_asset_dir.mkdir(parents=True, exist_ok=True)
             for chapter in bank["chapters"]:
                 for section in chapter["sections"]:
                     for question in section["questions"]:
@@ -369,8 +373,10 @@ def main() -> None:
                             continue
                         content = base64.b64decode(image_url.split(",", 1)[1])
                         filename = f"asset-{hashlib.sha256(content).hexdigest()[:12]}.png"
-                        (args.asset_dir / filename).write_bytes(content)
-                        question["imageUrl"] = f"/builtin-english/{filename}"
+                        (bank_asset_dir / filename).write_bytes(content)
+                        relative = f'英语一真题/{bank["name"]}/资源/{filename}'
+                        question["imageUrl"] = f"/api/default-workspace/file?path={quote(relative, safe='')}"
+        builtin_payload = merge_english_banks({"version": 1, "banks": builtin_year_banks})
         args.builtin_output.parent.mkdir(parents=True, exist_ok=True)
         args.builtin_output.write_text(json.dumps(builtin_payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"output": str(args.output), "banks": len(banks), "questions": sum(len(s["questions"]) for b in banks for c in b["chapters"] for s in c["sections"])}, ensure_ascii=False))

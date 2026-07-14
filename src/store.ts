@@ -1,14 +1,18 @@
 import type { PartBKind, QuestionBank, QuestionStatus, ReadingQuestionType } from './types'
 import { builtInBanks } from './data'
+import { mergeStudyActivities, validateStudyActivities, type StudyActivity } from './studyActivity'
 
 const BANKS_KEY = 'npee:banks:v1'
-const BUILTIN_SEED_KEY = 'npee:builtins:english-2004-2024:v6'
+const BUILTIN_SEED_KEY = 'npee:builtins:english-exams:v8'
 const STATUS_KEY = 'npee:status:v1'
 const NAVIGATION_KEY = 'npee:navigation:v1'
+const ACTIVITY_KEY = 'npee:activity:v1'
 const VALID_STATUSES = new Set<QuestionStatus>(['none', 'proficient', 'vague', 'wrong'])
 const VALID_READING_TYPES = new Set<ReadingQuestionType>(['detail', 'example', 'main-idea', 'attitude', 'inference', 'vocabulary'])
 const VALID_PART_B_KINDS = new Set<PartBKind>(['ordering', 'sentence', 'subheading', 'viewpoint'])
 const REMOVED_BANK_IDS = new Set(['local-calculus', 'local-linear'])
+const LEGACY_ENGLISH_BANK_ID = /^english-20\d{2}$/
+const ENGLISH_BANK_ID = 'english-exams'
 
 interface StoredBanksV2 {
   version: 2
@@ -46,10 +50,14 @@ function decodeStoredBanks(value: unknown): QuestionBank[] {
   if (!isRecord(value) || value.version !== 2) return validateBanks(value)
   if (!Array.isArray(value.bankOrder) || !value.bankOrder.length || value.bankOrder.some(id => typeof id !== 'string' || !id))
     throw new Error('题库缓存顺序无效')
-  const bankOrder = value.bankOrder as string[]
+  const originalBankOrder = value.bankOrder as string[]
+  const firstLegacyEnglishIndex = originalBankOrder.findIndex(id => LEGACY_ENGLISH_BANK_ID.test(id))
+  const bankOrder = originalBankOrder.filter(id => !LEGACY_ENGLISH_BANK_ID.test(id))
+  if (firstLegacyEnglishIndex >= 0 && !bankOrder.includes(ENGLISH_BANK_ID) && builtInBanks.some(bank => bank.id === ENGLISH_BANK_ID))
+    bankOrder.splice(Math.min(firstLegacyEnglishIndex, bankOrder.length), 0, ENGLISH_BANK_ID)
   if (new Set(bankOrder).size !== bankOrder.length) throw new Error('题库缓存顺序包含重复项')
   if (!Array.isArray(value.banks)) throw new Error('题库缓存内容无效')
-  const overrides = value.banks.length ? validateBanks(value.banks) : []
+  const overrides = value.banks.length ? validateBanks(value.banks).filter(bank => !LEGACY_ENGLISH_BANK_ID.test(bank.id)) : []
   const overrideById = new Map(overrides.map(bank => [bank.id, bank]))
   const builtInBankById = new Map(builtInBanks.map(bank => [bank.id, bank]))
   if (overrides.some(bank => !bankOrder.includes(bank.id))) throw new Error('题库缓存包含无效条目')
@@ -76,11 +84,10 @@ export function loadBanks(): QuestionBank[] {
     }
     const cached = decodeStoredBanks(JSON.parse(raw)).filter(bank => !REMOVED_BANK_IDS.has(bank.id))
     if (localStorage.getItem(BUILTIN_SEED_KEY)) return cached
-    const englishIds = new Set(builtInBanks.filter(bank => bank.id.startsWith('english-')).map(bank => bank.id))
     const cachedIds = new Set(cached.map(bank => bank.id))
-    const missingOtherBuiltIns = builtInBanks.filter(bank => !englishIds.has(bank.id) && !cachedIds.has(bank.id))
-    const refreshedEnglish = builtInBanks.filter(bank => englishIds.has(bank.id))
-    const seeded = [...cached.filter(bank => !englishIds.has(bank.id)), ...structuredClone(missingOtherBuiltIns), ...structuredClone(refreshedEnglish)]
+    const missingOtherBuiltIns = builtInBanks.filter(bank => !bank.id.startsWith('english-') && !cachedIds.has(bank.id))
+    const refreshedEnglish = builtInBanks.filter(bank => bank.id.startsWith('english-'))
+    const seeded = [...cached.filter(bank => !bank.id.startsWith('english-')), ...structuredClone(missingOtherBuiltIns), ...structuredClone(refreshedEnglish)]
     saveBanks(seeded)
     return seeded
   } catch {
@@ -107,19 +114,45 @@ export function loadStatuses(): Record<string, QuestionStatus> {
   } catch { return {} }
 }
 export function saveStatuses(statuses: Record<string, QuestionStatus>) { return trySetItem(STATUS_KEY, JSON.stringify(statuses)) }
+export function loadStudyActivities(): StudyActivity[] {
+  try { return mergeStudyActivities(validateStudyActivities(JSON.parse(localStorage.getItem(ACTIVITY_KEY) || '[]'))) } catch { return [] }
+}
+export function saveStudyActivities(activities: StudyActivity[]) { return trySetItem(ACTIVITY_KEY, JSON.stringify(activities)) }
 
 export interface NavigationState {
   bankId: string
   sectionId: string
   questionId: string
   view: 'section' | 'wrong'
+  page: 'study' | 'profile'
+  profileBankId: string
+  studyPositions: {
+    math?: Pick<NavigationState, 'bankId' | 'sectionId' | 'questionId' | 'view'>
+    english?: Pick<NavigationState, 'bankId' | 'sectionId' | 'questionId' | 'view'>
+  }
+}
+
+function parseStudyPosition(value: unknown) {
+  if (!isRecord(value) || typeof value.bankId !== 'string' || typeof value.sectionId !== 'string' || typeof value.questionId !== 'string') return undefined
+  return { bankId: value.bankId, sectionId: value.sectionId, questionId: value.questionId, view: value.view === 'wrong' ? 'wrong' as const : 'section' as const }
 }
 
 export function loadNavigation(): NavigationState | null {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(NAVIGATION_KEY) || 'null')
     if (!isRecord(value) || typeof value.bankId !== 'string' || typeof value.sectionId !== 'string' || typeof value.questionId !== 'string') return null
-    return { bankId: value.bankId, sectionId: value.sectionId, questionId: value.questionId, view: value.view === 'wrong' ? 'wrong' : 'section' }
+    return {
+      bankId: value.bankId,
+      sectionId: value.sectionId,
+      questionId: value.questionId,
+      view: value.view === 'wrong' ? 'wrong' : 'section',
+      page: value.page === 'profile' ? 'profile' : 'study',
+      profileBankId: typeof value.profileBankId === 'string' ? value.profileBankId : '',
+      studyPositions: isRecord(value.studyPositions) ? {
+        math: parseStudyPosition(value.studyPositions.math),
+        english: parseStudyPosition(value.studyPositions.english),
+      } : {},
+    }
   } catch { return null }
 }
 

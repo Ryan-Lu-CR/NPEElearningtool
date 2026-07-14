@@ -1,9 +1,10 @@
 {
   "name": "npee-study-space",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
+    "start": "node scripts/dev-control.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

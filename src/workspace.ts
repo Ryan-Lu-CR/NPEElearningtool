@@ -1,11 +1,12 @@
 import type { QuestionBank, QuestionStatus } from './types'
+import type { StudyActivity } from './studyActivity'
 
 const DB_NAME = 'npee-workspace'
 const STORE_NAME = 'handles'
 const HANDLE_KEY = 'question-bank-root'
 export const WORKSPACE_MANIFEST = '题库数据.json'
 export const WORKSPACE_USER_DATA = '用户数据.json'
-export const BUILTIN_ENGLISH_VERSION = 4
+export const BUILTIN_ENGLISH_VERSION = 6
 
 type WritableDirectoryHandle = FileSystemDirectoryHandle & {
   queryPermission(options: { mode: 'readwrite' }): Promise<PermissionState>
@@ -35,6 +36,7 @@ export interface WorkspaceUserData {
   version: 1
   updatedAt: string
   statuses: Record<string, QuestionStatus>
+  activities?: StudyActivity[]
 }
 
 export interface DefaultWorkspaceIndex {
@@ -54,8 +56,8 @@ export function createWorkspaceManifest(banks: QuestionBank[], folders: Record<s
   return { version: 1, builtinEnglishVersion: BUILTIN_ENGLISH_VERSION, updatedAt: new Date().toISOString(), banks, folders }
 }
 
-export function createWorkspaceUserData(statuses: Record<string, QuestionStatus>): WorkspaceUserData {
-  return { version: 1, updatedAt: new Date().toISOString(), statuses }
+export function createWorkspaceUserData(statuses: Record<string, QuestionStatus>, activities: StudyActivity[] = []): WorkspaceUserData {
+  return { version: 1, updatedAt: new Date().toISOString(), statuses, activities }
 }
 
 export async function writeDefaultWorkspaceManifest(banks: QuestionBank[], folders: Record<string, string> = {}) {
@@ -64,8 +66,8 @@ export async function writeDefaultWorkspaceManifest(banks: QuestionBank[], folde
   if (!response.ok) throw new Error('默认题库数据写入失败')
 }
 
-export async function writeDefaultWorkspaceUserData(statuses: Record<string, QuestionStatus>) {
-  const userData = createWorkspaceUserData(statuses)
+export async function writeDefaultWorkspaceUserData(statuses: Record<string, QuestionStatus>, activities: StudyActivity[] = []) {
+  const userData = createWorkspaceUserData(statuses, activities)
   const response = await fetch('/api/default-workspace/user-data', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userData, null, 2) })
   if (!response.ok) throw new Error('用户数据写入失败')
 }
@@ -139,10 +141,10 @@ export async function writeWorkspaceManifest(handle: FileSystemDirectoryHandle, 
   await writable.close()
 }
 
-export async function writeWorkspaceUserData(handle: FileSystemDirectoryHandle, statuses: Record<string, QuestionStatus>) {
+export async function writeWorkspaceUserData(handle: FileSystemDirectoryHandle, statuses: Record<string, QuestionStatus>, activities: StudyActivity[] = []) {
   const fileHandle = await handle.getFileHandle(WORKSPACE_USER_DATA, { create: true })
   const writable = await fileHandle.createWritable()
-  await writable.write(JSON.stringify(createWorkspaceUserData(statuses), null, 2))
+  await writable.write(JSON.stringify(createWorkspaceUserData(statuses, activities), null, 2))
   await writable.close()
 }
 
@@ -166,20 +168,37 @@ export async function readWorkspaceUserData(handle: FileSystemDirectoryHandle): 
   }
 }
 
-async function collectImages(directory: FileSystemDirectoryHandle, prefix: string, bankFolder: string, output: WorkspaceImageFile[]) {
+export function resolveWorkspaceImagePath(relativePath: string, bankFolders: string[] = []) {
+  const normalized = relativePath.replaceAll('\\', '/')
+  const knownFolder = [...bankFolders]
+    .map(folder => folder.replaceAll('\\', '/').replace(/^\/+|\/+$/g, ''))
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length)
+    .find(folder => normalized.startsWith(`${folder}/`))
+  if (knownFolder) return { bankFolder: knownFolder, relativePath: normalized.slice(knownFolder.length + 1) }
+  const separator = normalized.indexOf('/')
+  return separator < 0
+    ? { bankFolder: '', relativePath: normalized }
+    : { bankFolder: normalized.slice(0, separator), relativePath: normalized.slice(separator + 1) }
+}
+
+async function collectImages(directory: FileSystemDirectoryHandle, prefix: string, bankFolders: string[], output: WorkspaceImageFile[]) {
   for await (const [name, handle] of directory.entries()) {
     if (name.startsWith('.')) continue
     const relativePath = prefix ? `${prefix}/${name}` : name
-    if (handle.kind === 'directory') await collectImages(handle, relativePath, bankFolder, output)
-    else if (/\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(name)) output.push({ file: await handle.getFile(), relativePath, bankFolder })
+    if (handle.kind === 'directory') await collectImages(handle, relativePath, bankFolders, output)
+    else if (/\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(name)) {
+      const resolved = resolveWorkspaceImagePath(relativePath, bankFolders)
+      output.push({ file: await handle.getFile(), ...resolved })
+    }
   }
 }
 
-export async function scanWorkspaceImages(handle: FileSystemDirectoryHandle) {
+export async function scanWorkspaceImages(handle: FileSystemDirectoryHandle, bankFolders: string[] = []) {
   const output: WorkspaceImageFile[] = []
   for await (const [name, child] of handle.entries()) {
     if (name.startsWith('.') || name === WORKSPACE_MANIFEST || name === WORKSPACE_USER_DATA) continue
-    if (child.kind === 'directory') await collectImages(child, '', name, output)
+    if (child.kind === 'directory') await collectImages(child, name, bankFolders, output)
     else if (/\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(name)) output.push({ file: await child.getFile(), relativePath: name, bankFolder: '' })
   }
   return output
