@@ -1,6 +1,6 @@
 import type { QuestionStatus, ReadingQuestionType } from './types'
 
-export type StudyActivitySource = 'study' | 'wrong-book' | 'bulk-clear'
+export type StudyActivitySource = 'study' | 'wrong-book' | 'dashboard' | 'bulk-clear'
 
 export interface StudyActivity {
   /** Version 2 records contain a daily mastery transition and collection context. */
@@ -67,7 +67,7 @@ export function validateStudyActivities(value: unknown): StudyActivity[] {
       && (activity.questionType === undefined || typeof activity.questionType === 'string')
       && (activity.readingType === undefined || readingTypes.has(activity.readingType))
       && (activity.subject === undefined || activity.subject === 'math' || activity.subject === 'english')
-      && (activity.source === undefined || activity.source === 'study' || activity.source === 'wrong-book' || activity.source === 'bulk-clear')
+      && (activity.source === undefined || activity.source === 'study' || activity.source === 'wrong-book' || activity.source === 'dashboard' || activity.source === 'bulk-clear')
       && (activity.answerRevealed === undefined || typeof activity.answerRevealed === 'boolean')
   })
 }

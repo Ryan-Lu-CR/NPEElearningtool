@@ -239,6 +239,31 @@ export default function App() {
       answerRevealed: isBinaryMasteryQuestion(item) ? expandedPassageAnswers.has(questionId) : answerOpen,
     }))
   }
+  function markDashboardQuestion(targetBankId: string, questionId: string, status: QuestionStatus, answerRevealed: boolean) {
+    const targetBank = banks.find(item => item.id === targetBankId)
+    if (!targetBank) return
+    const questionEntry = orderedQuestionEntriesForBank(targetBank).find(entry => entry.question.id === questionId)
+    if (!questionEntry) return
+    const targetSubject = bankSubject(targetBank)
+    const targetBinaryMode = targetSubject === 'english'
+    const previousStatus = effectiveQuestionStatus(questionEntry.question, statuses[questionId] || 'none', targetBinaryMode)
+    setStatuses(previous => ({ ...previous, [questionId]: status }))
+    setActivities(previous => updateStudyActivity(previous, {
+      questionId,
+      bankId: targetBank.id,
+      status,
+      previousStatus,
+      chapterId: questionEntry.chapterId,
+      sectionId: questionEntry.sectionId,
+      questionNumber: questionEntry.question.number,
+      questionType: questionEntry.question.type,
+      readingType: questionEntry.question.readingType,
+      subject: targetSubject,
+      source: 'dashboard',
+      answerRevealed,
+    }))
+    setToast(`已标记为“${questionStatusMeta(questionEntry.question, status, targetBinaryMode).label}”`)
+  }
   function mark(status: QuestionStatus) { if (question) markQuestion(question.id, status, question) }
   function togglePassageAnswer(questionId: string) {
     setExpandedPassageAnswers(previous => {
@@ -584,7 +609,7 @@ export default function App() {
       </aside></>}
 
       <main className={activePage === 'profile' ? 'profile-main' : ''}>
-        {activePage === 'profile' ? <LearningDashboard banks={banks} statuses={statuses} activities={activities} selectedBankId={profileBankId} onSelectedBankIdChange={setProfileBankId}/> : <>
+        {activePage === 'profile' ? <LearningDashboard banks={banks} statuses={statuses} activities={activities} selectedBankId={profileBankId} onSelectedBankIdChange={setProfileBankId} onQuestionStatusChange={markDashboardQuestion}/> : <>
         <div className="page-head"><div><span className="breadcrumb">{bank.name} <ChevronRight size={13}/>{view === 'section' && currentChapter && <>{currentChapter.name} <ChevronRight size={13}/></>}{view === 'wrong' ? '本题库错题本' : section?.name || '未选择'}</span><h1>{view === 'wrong' ? '本题库错题本' : section?.name || '请选择具体节题目'}</h1><p>{view === 'wrong' ? `按章节和题号排列 · 共 ${wrongQuestions.length} 道错题` : section ? `共 ${section.questions.length} 道题 · 学习进度实时保存` : '从左侧选择一个章节开始学习'}</p></div>
           <div className="search"><Search size={17}/><input value={query} onChange={e => { setQuery(e.target.value); setQuestionIndex(0) }} placeholder={view === 'wrong' ? '搜索全部错题' : '搜索当前小节'}/></div>
         </div>

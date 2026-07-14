@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
-import type { QuestionBank, QuestionStatus } from './types'
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Eye } from 'lucide-react'
+import type { Question, QuestionBank, QuestionStatus } from './types'
 import { sortBanksForDisplay } from './bankSorting'
 import { calculateLearningStats, calculateQuestionStats, formatRate } from './learningStats'
 import { calculateDailyActivity, localDateKey, type StudyActivity } from './studyActivity'
+import DashboardQuestionDialog from './DashboardQuestionDialog'
 
 interface LearningDashboardProps {
   banks: QuestionBank[]
@@ -11,13 +12,23 @@ interface LearningDashboardProps {
   activities: StudyActivity[]
   selectedBankId: string
   onSelectedBankIdChange: (bankId: string) => void
+  onQuestionStatusChange: (bankId: string, questionId: string, status: QuestionStatus, answerRevealed: boolean) => void
+}
+
+interface DashboardQuestionPreview {
+  bank: QuestionBank
+  chapterName: string
+  sectionName: string
+  question: Question
 }
 
 const bankSubject = (bank: QuestionBank) => bank.id.startsWith('english-') || /英语/i.test(bank.name) ? '英语' : '数学'
 
-export default function LearningDashboard({ banks, statuses, activities, selectedBankId, onSelectedBankIdChange }: LearningDashboardProps) {
+export default function LearningDashboard({ banks, statuses, activities, selectedBankId, onSelectedBankIdChange, onQuestionStatusChange }: LearningDashboardProps) {
   const orderedBanks = [...sortBanksForDisplay(banks.filter(bank => bankSubject(bank) === '数学')), ...sortBanksForDisplay(banks.filter(bank => bankSubject(bank) === '英语'))]
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(() => new Set())
+  const [questionMenuId, setQuestionMenuId] = useState<string | null>(null)
+  const [questionPreview, setQuestionPreview] = useState<DashboardQuestionPreview | null>(null)
   const today = localDateKey()
   const [calendarMonth, setCalendarMonth] = useState(today.slice(0, 7))
   const [selectedDate, setSelectedDate] = useState(today)
@@ -56,7 +67,7 @@ export default function LearningDashboard({ banks, statuses, activities, selecte
   }, [selectedBank, selectedBankId, onSelectedBankIdChange])
   useEffect(() => { setExpandedSectionIds(new Set()) }, [selectedBankId])
 
-  return <section className="learning-dashboard">
+  return <section className="learning-dashboard" onClick={() => setQuestionMenuId(null)}>
     <div className="learning-top"><div className="learning-heading"><span>MY LEARNING</span><h1>我的学习数据</h1><p>正确率仅按已标记题目计算，未标记题目不会影响结果。</p></div>
       <label className="dashboard-bank-picker"><span>查看题库详情</span><select value={selectedBank?.id || ''} onChange={event => onSelectedBankIdChange(event.target.value)}>{orderedBanks.map(bank => <option key={bank.id} value={bank.id}>{bank.name}</option>)}</select></label>
     </div>
@@ -109,11 +120,12 @@ export default function LearningDashboard({ banks, statuses, activities, selecte
                 <div className="section-progress-rate"><span>正确率</span><strong>{formatRate(stats.accuracy)}</strong></div>
                 <div className="section-progress-counts"><span className="green-text">{stats.proficient} 正确</span><span className="yellow-text">{stats.vague} 模糊</span><span className="red-text">{stats.wrong} 错误</span></div>
               </button>
-              {expanded && <div className="section-question-details"><div className="section-question-heading"><strong>题号情况</strong><div><span><i/>未标记</span><span><i className="green"/>{selectedBankIsEnglish ? '正确' : '熟练'}</span>{!selectedBankIsEnglish && <span><i className="yellow"/>模糊</span>}<span><i className="red"/>{selectedBankIsEnglish ? '错误' : '错题'}</span></div></div><div className="section-question-grid">{[...section.questions].sort((left, right) => left.number - right.number).map(question => { const rawStatus = statuses[question.id] || 'none'; const status = selectedBankIsEnglish && rawStatus === 'vague' ? 'none' : rawStatus; return <span key={question.id} className={status} title={`第 ${question.number} 题 · ${status === 'proficient' ? selectedBankIsEnglish ? '正确' : '熟练' : status === 'vague' ? '模糊' : status === 'wrong' ? selectedBankIsEnglish ? '错误' : '错题' : '未标记'}`}>{question.number}</span> })}</div></div>}
+              {expanded && <div className="section-question-details"><div className="section-question-heading"><strong>题号情况</strong><div><span><i/>未标记</span><span><i className="green"/>{selectedBankIsEnglish ? '正确' : '熟练'}</span>{!selectedBankIsEnglish && <span><i className="yellow"/>模糊</span>}<span><i className="red"/>{selectedBankIsEnglish ? '错误' : '错题'}</span></div></div><div className="section-question-grid">{[...section.questions].sort((left, right) => left.number - right.number).map(question => { const rawStatus = statuses[question.id] || 'none'; const status = selectedBankIsEnglish && rawStatus === 'vague' ? 'none' : rawStatus; return <div className="section-question-item" key={question.id} onClick={event => event.stopPropagation()}><button className={status} aria-haspopup="menu" aria-expanded={questionMenuId === question.id} title={`第 ${question.number} 题 · ${status === 'proficient' ? selectedBankIsEnglish ? '正确' : '熟练' : status === 'vague' ? '模糊' : status === 'wrong' ? selectedBankIsEnglish ? '错误' : '错题' : '未标记'}`} onClick={() => setQuestionMenuId(current => current === question.id ? null : question.id)}>{question.number}</button>{questionMenuId === question.id && <div className="question-number-popover" role="menu"><span>第 {question.number} 题</span><button role="menuitem" onClick={() => { setQuestionPreview({ bank: selectedBank, chapterName: chapter.name, sectionName: section.name, question }); setQuestionMenuId(null) }}><Eye size={14}/>查看题目</button></div>}</div> })}</div></div>}
             </div>
           })}</div>
         </article>
       })}{selectedBank.chapters.length === 0 && <div className="section-progress-empty">该题库还没有章节数据</div>}</div>
     </section>}
+    {questionPreview && <DashboardQuestionDialog bankName={questionPreview.bank.name} chapterName={questionPreview.chapterName} sectionName={questionPreview.sectionName} question={questionPreview.question} status={statuses[questionPreview.question.id] || 'none'} binaryMode={bankSubject(questionPreview.bank) === '英语'} onStatusChange={(status, answerRevealed) => onQuestionStatusChange(questionPreview.bank.id, questionPreview.question.id, status, answerRevealed)} onClose={() => setQuestionPreview(null)}/>}
   </section>
 }

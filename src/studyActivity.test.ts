@@ -36,9 +36,10 @@ describe('study activity', () => {
     const [record] = updateStudyActivity([], {
       questionId: 'q1', bankId: 'math', status: 'vague', previousStatus: 'none',
       chapterId: 'c1', sectionId: 's1', questionNumber: 7, questionType: '选择题',
-      subject: 'math', source: 'study', answerRevealed: true,
+      subject: 'math', source: 'dashboard', answerRevealed: true,
     }, now)
-    expect(record).toMatchObject({ chapterId: 'c1', sectionId: 's1', questionNumber: 7, questionType: '选择题', subject: 'math', source: 'study', answerRevealed: true })
+    expect(record).toMatchObject({ chapterId: 'c1', sectionId: 's1', questionNumber: 7, questionType: '选择题', subject: 'math', source: 'dashboard', answerRevealed: true })
+    expect(validateStudyActivities([record])).toEqual([record])
   })
 
   it('统计每日题量和正确率', () => {
