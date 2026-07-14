@@ -86,7 +86,7 @@ export async function putAssets(inputs: AssetInput[]) {
   notifyAssetChanges()
 }
 
-export async function getAssetBlobs(keys: string[]): Promise<Blob[]> {
+async function resolveAssetBlobs(keys: string[]): Promise<Array<Blob | null>> {
   if (!keys.length) return []
   const records: Array<{ blob?: Blob; url?: string } | null> = keys.map(key => assetUrls.has(key) ? { url: assetUrls.get(key)! } : null)
   const missing = keys.map((key, index) => ({ key, index })).filter(({ index }) => records[index] === null)
@@ -101,12 +101,20 @@ export async function getAssetBlobs(keys: string[]): Promise<Blob[]> {
       missing.forEach(({ index }, position) => { records[index] = stored[position] })
     } finally { database.close() }
   }
-  const blobs = await Promise.all(records.map(async record => {
+  return Promise.all(records.map(async record => {
     if (record?.blob instanceof Blob) return record.blob
     if (record?.url) { const response = await fetch(record.url); return response.ok ? response.blob() : null }
     return null
   }))
-  return blobs.filter((blob): blob is Blob => blob !== null)
+}
+
+export async function getAssetBlobs(keys: string[]): Promise<Blob[]> {
+  return (await resolveAssetBlobs(keys)).filter((blob): blob is Blob => blob !== null)
+}
+
+export async function getAssetFiles(keys: string[]) {
+  const blobs = await resolveAssetBlobs(keys)
+  return keys.flatMap((key, index) => blobs[index] ? [{ key, blob: blobs[index] as Blob }] : [])
 }
 
 export async function deleteAssets(keys: string[]) {
