@@ -81,6 +81,32 @@
   padding-top: 0;
 }
 
+.standard-answer-toggle {
+  width: calc(100% - 48px);
+  margin: 16px 24px 0;
+}
+
+.answer-toggle.standard-answer-toggle svg:last-child {
+  margin-left: 0;
+}
+
+.standard-answer-panel {
+  margin: 18px 24px 20px;
+}
+
+@media screen and (max-width: 580px) {
+  .standard-answer-toggle {
+    width: calc(100% - 36px);
+    margin-right: 18px;
+    margin-left: 18px;
+  }
+
+  .standard-answer-panel {
+    margin-right: 18px;
+    margin-left: 18px;
+  }
+}
+
 @media screen and (min-width: 901px) {
   .study-layout > .question-nav,
   .passage-question-nav {
