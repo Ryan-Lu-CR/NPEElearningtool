@@ -4,7 +4,7 @@ import type { Question, QuestionBank, QuestionStatus, ReadingQuestionType, Secti
 import { loadBanks, loadNavigation, loadStatuses, loadStudyActivities, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, saveStudyActivities, validateBanks, validateStatuses } from './store'
 import { deleteAssets } from './assets'
 import AssetGallery from './AssetGallery'
-import ExportDialog, { ExportPage, type ExportJob } from './ExportDialog'
+import ExportDialog, { ExportPage, waitForExportContent, type ExportJob } from './ExportDialog'
 import SettingsDialog from './SettingsDialog'
 import { assetKeysForBank, clearQuestionStatuses, orderedQuestionEntriesForBank, questionIdsForBank, removeBank, resetBankData } from './bankManagement'
 import { builtInBanks, defaultBankIds, englishBanks } from './data'
@@ -78,6 +78,7 @@ export default function App() {
   const studyPositions = useRef<Partial<Record<Subject, SavedNavigation>>>({})
   const importRef = useRef<HTMLInputElement>(null)
   const imageImportRef = useRef<HTMLInputElement>(null)
+  const printSheetRef = useRef<HTMLElement>(null)
 
   useEffect(() => { if (!saveBanks(banks)) setToast('浏览器存储空间不足，题库修改尚未保存；请连接题库文件夹或先导出备份') }, [banks])
   useEffect(() => { if (!saveStatuses(statuses)) setToast('学习标记保存失败，请先导出备份后检查浏览器存储空间') }, [statuses])
@@ -125,6 +126,22 @@ export default function App() {
     window.addEventListener('afterprint', finishPrinting)
     return () => window.removeEventListener('afterprint', finishPrinting)
   }, [])
+  useEffect(() => {
+    if (!printMode || !printJob) return
+    let cancelled = false
+    const preparePrint = async () => {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      if (!printSheetRef.current) throw new Error('打印内容准备失败，请重试')
+      await waitForExportContent(printSheetRef.current)
+      if (!cancelled) { setToast('打印预览已就绪，可选择“另存为 PDF”'); window.print() }
+    }
+    preparePrint().catch(error => {
+      if (cancelled) return
+      setPrintMode(false); setPrintJob(null)
+      setToast(error instanceof Error ? error.message : 'PDF 导出失败')
+    })
+    return () => { cancelled = true }
+  }, [printMode, printJob])
 
   const bank = banks.find(b => b.id === bankId) || banks[0]
   const subject = bankSubject(bank)
@@ -376,9 +393,8 @@ export default function App() {
   function printExport(job: ExportJob) {
     if (!job.questions.length) { setToast('当前条件下没有可导出的题目'); return }
     setPrintJob(job); setExportOpen(false)
-    setToast('正在打开打印预览，可选择“另存为 PDF”')
+    setToast('正在准备题目图片…')
     setPrintMode(true)
-    setTimeout(() => window.print(), 500)
   }
   async function importData(file?: File) {
     if (!file) return
@@ -656,9 +672,9 @@ export default function App() {
           <nav className="question-nav" aria-label={showFullPaperNavigation ? '全卷导航' : '题号导航'}><div><strong>{showFullPaperNavigation ? '全卷导航' : '题号导航'}</strong><small>{view === 'wrong' ? '章-题号' : '点击快速跳转'}</small></div><div className="number-grid">{showFullPaperNavigation ? currentPaperEntries.map(entry => { const q = entry.question; const navStatus = effectiveQuestionStatus(q, statuses[q.id] || 'none', binaryFilterMode); return <button key={q.id} aria-current={q.id === question.id ? 'true' : undefined} title={`${entry.sectionName} · 第 ${q.number} 题`} className={`${q.id === question.id ? 'selected ' : ''}${navStatus}`} onClick={() => navigateToBankQuestion(entry)}>{q.number}</button> }) : filteredQuestions.map((q, i) => { const entry = view === 'wrong' ? wrongEntries.find(item => item.question.id === q.id) : undefined; const navStatus = effectiveQuestionStatus(q, statuses[q.id] || 'none', binaryFilterMode); return <button key={q.id} title={entry ? `${entry.chapterName} · 第 ${q.number} 题` : `第 ${q.number} 题`} className={`${i === questionIndex ? 'selected ' : ''}${navStatus}`} onClick={() => { setQuestionIndex(i); setAnswerOpen(false) }}>{entry ? `${entry.chapterIndex + 1}-${q.number}` : q.number}</button> })}</div><div className="legend"><span><i/>未标记</span><span><i className="green"/>{binaryFilterMode ? '正确' : '熟练'}</span>{!binaryFilterMode && <span><i className="yellow"/>模糊</span>}<span><i className="red"/>{binaryFilterMode ? '错误' : '错题'}</span></div><div className="nav-accuracy"><span>当前正确率</span><strong>{formatRate(currentNavigationStats.accuracy)}</strong><small>{currentNavigationStats.marked} 道题已标记</small></div></nav>
         </div> : <div className="no-results"><Search size={32}/><h2>{view === 'wrong' && wrongQuestions.length === 0 ? '错题已经清空' : '没有符合条件的题目'}</h2><p>{view === 'wrong' && wrongQuestions.length === 0 ? '很好，继续练习其他章节巩固掌握情况。' : '尝试更换筛选条件或清空搜索词。'}</p><button onClick={() => view === 'wrong' && wrongQuestions.length === 0 ? setView('section') : (setFilter('all'), setQuery(''))}><RotateCcw size={16}/>{view === 'wrong' && wrongQuestions.length === 0 ? '返回当前小节' : '重置筛选'}</button></div>}
 
-        {printMode && printJob && <section className="print-sheet" aria-hidden="true">
+        {printMode && printJob && <section className="print-sheet" aria-hidden="true" ref={printSheetRef}>
           <div className="print-title"><h1>{printJob.title}</h1><p>{printJob.subtitle}</p></div>
-          {Array.from({ length: Math.ceil(printJob.questions.length / printJob.perPage) }, (_, index) => <ExportPage key={index} questions={printJob.questions.slice(index * printJob.perPage, (index + 1) * printJob.perPage)} includeAnswers={printJob.includeAnswers} pageNumber={index + 1} showType={false}/>) }
+          {Array.from({ length: Math.ceil(printJob.questions.length / printJob.perPage) }, (_, index) => <ExportPage key={index} questions={printJob.questions.slice(index * printJob.perPage, (index + 1) * printJob.perPage)} statuses={printJob.statuses} pageNumber={index + 1} showType={false}/>) }
         </section>}
         </>}
       </main>

@@ -1,7 +1,7 @@
 {
   "name": "npee-study-space",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "start": "node scripts/dev-control.mjs",
@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "html-to-image": "^1.11.13",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
