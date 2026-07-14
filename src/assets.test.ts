@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getAssetBlobs, parseStructuredImagePath, putAssets, readableAssetStorageError } from './assets'
+import { getAssetBlobs, getAssetRevision, parseStructuredImagePath, putAssets, readableAssetStorageError, subscribeAssetChanges } from './assets'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -42,5 +42,16 @@ describe('parseStructuredImagePath', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/default-workspace/file?path=question.png')
     expect(result).toHaveLength(1)
     expect(await result[0].text()).toBe('image')
+  })
+
+  it('工作区素材注册后通知当前题目重新加载', async () => {
+    vi.stubGlobal('indexedDB', undefined)
+    const listener = vi.fn()
+    const unsubscribe = subscribeAssetChanges(listener)
+    const previousRevision = getAssetRevision()
+    await putAssets([{ key: 'default/restored.png', file: new File([], 'restored.png'), url: '/api/default-workspace/file?path=restored.png' }])
+    expect(getAssetRevision()).toBeGreaterThan(previousRevision)
+    expect(listener).toHaveBeenCalledOnce()
+    unsubscribe()
   })
 })

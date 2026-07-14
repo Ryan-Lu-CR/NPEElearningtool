@@ -2,7 +2,7 @@ import type { PartBKind, QuestionBank, QuestionStatus, ReadingQuestionType } fro
 import { builtInBanks } from './data'
 
 const BANKS_KEY = 'npee:banks:v1'
-const BUILTIN_SEED_KEY = 'npee:builtins:english-2004-2024:v6'
+const BUILTIN_SEED_KEY = 'npee:builtins:english-2004-2026:v7'
 const STATUS_KEY = 'npee:status:v1'
 const NAVIGATION_KEY = 'npee:navigation:v1'
 const VALID_STATUSES = new Set<QuestionStatus>(['none', 'proficient', 'vague', 'wrong'])

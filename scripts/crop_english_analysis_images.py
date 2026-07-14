@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Crop per-question analysis images and attach them to built-in English banks."""
+"""Crop per-question analysis images into each default English bank folder."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import json
 import re
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import quote
 
 import pdfplumber
 from PIL import Image
@@ -93,16 +94,17 @@ def main() -> None:
     parser.add_argument("bank_json", type=Path)
     parser.add_argument("clean_dir", type=Path)
     parser.add_argument("local_dir", type=Path)
-    parser.add_argument("asset_dir", type=Path)
+    parser.add_argument("default_root", type=Path)
     parser.add_argument("--resolution", type=int, default=132)
     args = parser.parse_args()
 
     payload = json.loads(args.bank_json.read_text(encoding="utf-8"))
     banks = {int(bank["id"].split("-")[1]): bank for bank in payload["banks"] if re.fullmatch(r"english-20(?:1\d|2[0-4])", bank["id"])}
-    args.asset_dir.mkdir(parents=True, exist_ok=True)
     report = {}
 
     for year in range(2010, 2025):
+        asset_dir = args.default_root / "英语一真题" / banks[year]["name"] / "资源"
+        asset_dir.mkdir(parents=True, exist_ok=True)
         source = args.local_dir / f"{year}年考研英语一真题解析.pdf" if year in (2022, 2024) else args.clean_dir / f"{year}.pdf"
         with pdfplumber.open(source) as pdf:
             anchors = find_anchors(pdf)
@@ -132,10 +134,11 @@ def main() -> None:
                 if not filename:
                     filename = f"analysis-{year}-{number:02d}.webp"
                     image = crop_between(pdf, start, end, args.resolution)
-                    image.save(args.asset_dir / filename, "WEBP", quality=82, method=6)
+                    image.save(asset_dir / filename, "WEBP", quality=82, method=6)
                     generated[key] = filename
                 question = next(q for c in banks[year]["chapters"] for s in c["sections"] for q in s["questions"] if q["number"] == number)
-                question["answerImageUrl"] = f"/builtin-english/{filename}"
+                relative = f'英语一真题/{banks[year]["name"]}/资源/{filename}'
+                question["answerImageUrl"] = f"/api/default-workspace/file?path={quote(relative, safe='')}"
             report[year] = {"anchors": len(anchors), "fallbackQuestions": missing, "images": len(generated)}
 
     args.bank_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

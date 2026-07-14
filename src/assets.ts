@@ -2,8 +2,22 @@ const DB_NAME = 'npee-question-assets'
 const STORE_NAME = 'assets'
 const DB_VERSION = 1
 const assetUrls = new Map<string, string>()
+const assetListeners = new Set<() => void>()
+let assetRevision = 0
 
 export interface AssetInput { key: string; file: File; url?: string }
+
+export function subscribeAssetChanges(listener: () => void) {
+  assetListeners.add(listener)
+  return () => { assetListeners.delete(listener) }
+}
+
+export function getAssetRevision() { return assetRevision }
+
+function notifyAssetChanges() {
+  assetRevision++
+  assetListeners.forEach(listener => listener())
+}
 
 function registerAssetUrl(key: string, url: string) {
   const previous = assetUrls.get(key)
@@ -52,6 +66,7 @@ export async function putAssets(inputs: AssetInput[]) {
   if (!inputs.length) return
   const urlInputs = inputs.filter((input): input is AssetInput & { url: string } => Boolean(input.url))
   urlInputs.forEach(input => registerAssetUrl(input.key, input.url))
+  if (urlInputs.length) notifyAssetChanges()
   void removeLegacyCachedAssets(urlInputs.map(input => input.key))
   const blobInputs = inputs.filter(input => !input.url)
   if (!blobInputs.length) return
@@ -68,6 +83,7 @@ export async function putAssets(inputs: AssetInput[]) {
     })
   } catch (error) { throw readableAssetStorageError(error) }
   finally { database.close() }
+  notifyAssetChanges()
 }
 
 export async function getAssetBlobs(keys: string[]): Promise<Blob[]> {

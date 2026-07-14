@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { QuestionBank } from './types'
-import { createWorkspaceManifest, createWorkspaceUserData } from './workspace'
+import { createWorkspaceManifest, createWorkspaceUserData, resolveWorkspaceImagePath } from './workspace'
 
 const bank: QuestionBank = {
   id: 'bank-1',
@@ -22,5 +22,15 @@ describe('workspace data separation', () => {
     expect(userData.statuses).toEqual({ 'question-1': 'wrong' })
     expect(userData).not.toHaveProperty('banks')
     expect(userData).not.toHaveProperty('folders')
+  })
+
+  it('recognizes a bank stored below a grouping folder', () => {
+    expect(resolveWorkspaceImagePath(
+      '英语一真题/2024年考研英语一真题/资源/analysis.webp',
+      ['英语一真题/2024年考研英语一真题'],
+    )).toEqual({
+      bankFolder: '英语一真题/2024年考研英语一真题',
+      relativePath: '资源/analysis.webp',
+    })
   })
 })

@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
-import { getAssetBlobs } from './assets'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { getAssetBlobs, getAssetRevision, subscribeAssetChanges } from './assets'
 
 interface Props { keys?: string[]; urls?: string[]; alt: string; className?: string }
 
 export default function AssetGallery({ keys = [], urls = [], alt, className }: Props) {
   const [localUrls, setLocalUrls] = useState<string[]>([])
   const keySignature = keys.join('\u0000')
+  const assetRevision = useSyncExternalStore(subscribeAssetChanges, getAssetRevision, getAssetRevision)
 
   useEffect(() => {
     let disposed = false
@@ -16,7 +17,7 @@ export default function AssetGallery({ keys = [], urls = [], alt, className }: P
       else objectUrls.forEach(URL.revokeObjectURL)
     }).catch(() => { if (!disposed) setLocalUrls([]) })
     return () => { disposed = true; objectUrls.forEach(URL.revokeObjectURL) }
-  }, [keySignature])
+  }, [keySignature, assetRevision])
 
   const sources = [...urls.filter(Boolean), ...localUrls]
   if (!sources.length) return null

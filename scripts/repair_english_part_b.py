@@ -12,13 +12,14 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 import build_english_exam_bank as legacy
 
 
 PART_B_KIND = {
     **{year: "sentence" for year in (2005, 2006, 2008, 2009, 2012, 2013, 2015, 2021)},
-    **{year: "ordering" for year in (2010, 2011, 2014, 2017, 2018, 2019, 2023)},
+    **{year: "ordering" for year in (2010, 2011, 2014, 2017, 2018, 2019, 2023, 2025, 2026)},
     **{year: "subheading" for year in (2007, 2016, 2020, 2022)},
     2024: "viewpoint",
 }
@@ -51,13 +52,20 @@ ORDERING_SEQUENCES = {
     2018: "41 → C → 42 → 43 → F → 44 → 45",
     2019: "41 → 42 → F → 43 → 44 → C → 45",
     2023: "41 → A → 42 → E → 43 → H → 44 → 45",
+    2025: "41 → 42 → C → 43 → H → 44 → A → 45",
+    2026: "F → 41 → 42 → H → 43 → C → 44 → 45",
 }
 
 VIEWPOINT_NAMES = {41: "Hannah", 42: "Buck", 43: "Sara", 44: "Victor", 45: "Julia"}
 
+def default_asset_url(year: int, filename: str) -> str:
+    relative = f"英语一真题/{year}年考研英语一真题/资源/{filename}"
+    return f"/api/default-workspace/file?path={quote(relative, safe='')}"
+
+
 SCAN_PASSAGE_IMAGES = {
-    2020: ["/builtin-english/part-b-2020-12.jpg", "/builtin-english/part-b-2020-13.jpg"],
-    2021: ["/builtin-english/part-b-2021-12.jpg", "/builtin-english/part-b-2021-13.jpg"],
+    2020: [default_asset_url(2020, "part-b-2020-12.jpg"), default_asset_url(2020, "part-b-2020-13.jpg")],
+    2021: [default_asset_url(2021, "part-b-2021-12.jpg"), default_asset_url(2021, "part-b-2021-13.jpg")],
 }
 
 # The 2023 paper is image-only in the supplied standalone PDF.  A-G were already
@@ -182,6 +190,8 @@ def repair_payload(payload: dict) -> tuple[int, int]:
     removed_crops = 0
 
     for bank in payload["banks"]:
+        if not re.fullmatch(r"english-\d{4}", bank.get("id", "")):
+            continue
         year = int(bank["id"].split("-")[1])
         kind = PART_B_KIND.get(year)
         for chapter in bank["chapters"]:
@@ -197,8 +207,8 @@ def repair_payload(payload: dict) -> tuple[int, int]:
                 if year == 2023 and not any(option.startswith("H.") for option in options):
                     options.append(Y2023_OPTION_H)
                 options = [strip_ordering_chain(option) if kind == "ordering" else option.strip() for option in options]
-                expected = 8 if year == 2023 else 7
-                letters = "ABCDEFGH" if year == 2023 else "ABCDEFG"
+                expected = 8 if year in {2023, 2025, 2026} else 7
+                letters = "ABCDEFGH" if year in {2023, 2025, 2026} else "ABCDEFG"
                 if len(options) != expected:
                     raise ValueError(f"{year}: found {len(options)} Part B options, expected {expected}")
 
@@ -216,10 +226,8 @@ def repair_payload(payload: dict) -> tuple[int, int]:
                     elif passage:
                         section["passage"] = passage
                         section.pop("passageImageUrls", None)
-                    else:
-                        # Never retain the known Part C/translation fallback as Part B source.
-                        section.pop("passage", None)
-                        section.pop("passageImageUrls", None)
+                    # If the original paper is unavailable, preserve the already
+                    # verified source instead of turning the section into an empty frame.
 
                 for question in questions:
                     number = int(question["number"])
@@ -238,7 +246,7 @@ def repair_payload(payload: dict) -> tuple[int, int]:
 
 
 def main() -> None:
-    path = Path("src/englishBanks.json")
+    path = Path("默认题库/题库数据.json")
     payload = json.loads(path.read_text(encoding="utf-8"))
     repaired_sections, removed_crops = repair_payload(payload)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

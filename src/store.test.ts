@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import englishPayload from './englishBanks.json'
-import { initializeBuiltInBanks } from './data'
+import defaultManifest from '../默认题库/题库数据.json'
+import { initializeDefaultBanks } from './data'
 import { loadBanks, loadNavigation, loadStatuses, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, validateBanks, validateStatuses } from './store'
 import type { QuestionBank } from './types'
 
@@ -21,7 +21,7 @@ const validBank = {
 }
 
 beforeEach(() => {
-  initializeBuiltInBanks(englishPayload.banks as unknown as QuestionBank[])
+  initializeDefaultBanks(defaultManifest.banks as unknown as QuestionBank[])
   Object.defineProperty(globalThis, 'localStorage', { value: new MemoryStorage(), configurable: true })
 })
 

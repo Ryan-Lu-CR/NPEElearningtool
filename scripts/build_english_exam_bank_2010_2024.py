@@ -7,6 +7,7 @@ import argparse
 import copy
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pdfplumber
@@ -103,8 +104,11 @@ def main() -> None:
     if args.merge_builtin:
         current = json.loads(args.merge_builtin.read_text(encoding="utf-8"))
         kept = [bank for bank in current.get("banks", []) if not re.fullmatch(r"english-20(?:1\d|2[0-4])", bank.get("id", ""))]
-        merged = copy.deepcopy({"version": 1, "banks": kept + banks})
-        args.merge_builtin.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+        merged = copy.deepcopy(current)
+        merged["banks"] = kept + banks
+        merged.setdefault("folders", {}).update({bank["id"]: f'英语一真题/{bank["name"]}' for bank in banks})
+        merged["updatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        args.merge_builtin.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     print(json.dumps({"banks": len(banks), "questions": sum(len(s["questions"]) for b in banks for c in b["chapters"] for s in c["sections"])}, ensure_ascii=False))
 

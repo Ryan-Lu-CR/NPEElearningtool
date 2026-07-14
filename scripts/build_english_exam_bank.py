@@ -16,6 +16,7 @@ import io
 import json
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 import pdfplumber
 
@@ -359,8 +360,9 @@ def main() -> None:
     args.output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.builtin_output and args.asset_dir:
         builtin_payload = copy.deepcopy(payload)
-        args.asset_dir.mkdir(parents=True, exist_ok=True)
         for bank in builtin_payload["banks"]:
+            bank_asset_dir = args.asset_dir / "英语一真题" / bank["name"] / "资源"
+            bank_asset_dir.mkdir(parents=True, exist_ok=True)
             for chapter in bank["chapters"]:
                 for section in chapter["sections"]:
                     for question in section["questions"]:
@@ -369,8 +371,9 @@ def main() -> None:
                             continue
                         content = base64.b64decode(image_url.split(",", 1)[1])
                         filename = f"asset-{hashlib.sha256(content).hexdigest()[:12]}.png"
-                        (args.asset_dir / filename).write_bytes(content)
-                        question["imageUrl"] = f"/builtin-english/{filename}"
+                        (bank_asset_dir / filename).write_bytes(content)
+                        relative = f'英语一真题/{bank["name"]}/资源/{filename}'
+                        question["imageUrl"] = f"/api/default-workspace/file?path={quote(relative, safe='')}"
         args.builtin_output.parent.mkdir(parents=True, exist_ok=True)
         args.builtin_output.write_text(json.dumps(builtin_payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"output": str(args.output), "banks": len(banks), "questions": sum(len(s["questions"]) for b in banks for c in b["chapters"] for s in c["sections"])}, ensure_ascii=False))

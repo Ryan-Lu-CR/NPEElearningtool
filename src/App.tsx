@@ -336,7 +336,6 @@ export default function App() {
       setBanks(result.banks); setStatuses(nextStatuses); setWorkspaceFolders(folders); setWorkspaceHandle(null); setDefaultWorkspaceConnected(true); setWorkspaceState('connected')
       window.setTimeout(() => {
         workspaceReady.current = true
-        Promise.all([writeDefaultWorkspaceManifest(result.banks, folders), writeDefaultWorkspaceUserData(nextStatuses)]).catch(() => setWorkspaceState('error'))
       }, 0)
       setToast(`已自动连接“${index.name}”${result.imported ? `，识别 ${result.imported} 张图片` : ''}`)
       return true
@@ -360,7 +359,7 @@ export default function App() {
       }
       const storedStatuses = userData?.statuses || manifest?.statuses
       const nextStatuses = storedStatuses ? validateStatuses(storedStatuses) : statuses
-      const images = await scanWorkspaceImages(handle)
+      const images = await scanWorkspaceImages(handle, Object.values(manifest?.folders || {}))
       const folders = { ...(manifest?.folders || {}) }
       for (const folderName of new Set(images.map(item => item.bankFolder).filter(Boolean))) {
         let target = nextBanks.find(item => folders[item.id] === folderName || safeFolderName(item.name) === folderName)
@@ -390,7 +389,6 @@ export default function App() {
       setWorkspaceState('connected')
       window.setTimeout(() => {
         workspaceReady.current = true
-        Promise.all([writeWorkspaceManifest(handle, result.banks, folders), writeWorkspaceUserData(handle, nextStatuses)]).catch(() => setWorkspaceState('error'))
       }, 0)
       setToast(`已连接“${handle.name}”${seededEnglishCount ? `，更新 ${seededEnglishCount} 个内置英语题库` : ''}${result.imported ? `，同步 ${result.imported} 张图片` : ''}`)
       return true
