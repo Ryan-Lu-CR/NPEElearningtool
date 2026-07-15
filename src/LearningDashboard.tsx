@@ -24,6 +24,17 @@ interface DashboardQuestionPreview {
 
 const bankSubject = (bank: QuestionBank) => bank.id.startsWith('english-') || /英语/i.test(bank.name) ? '英语' : '数学'
 
+function MasteryProgressBar({ stats, label, binaryMode }: { stats: ReturnType<typeof calculateQuestionStats>; label: string; binaryMode: boolean }) {
+  const share = (count: number) => stats.total ? `${count / stats.total * 100}%` : '0%'
+  const proficientLabel = binaryMode ? '正确' : '熟练'
+  const wrongLabel = binaryMode ? '错误' : '错题'
+  const description = `${label}：已标记 ${stats.marked}/${stats.total}，${proficientLabel} ${stats.proficient}${binaryMode ? '' : `，模糊 ${stats.vague}`}，${wrongLabel} ${stats.wrong}`
+  return <div className="section-progress-bar mastery-progress-bar" aria-label={description} title={description}>
+    <i className="proficient" style={{ width: share(stats.proficient) }}/>
+    {!binaryMode && <i className="vague" style={{ width: share(stats.vague) }}/>}<i className="wrong" style={{ width: share(stats.wrong) }}/>
+  </div>
+}
+
 export default function LearningDashboard({ banks, statuses, activities, selectedBankId, onSelectedBankIdChange, onQuestionStatusChange }: LearningDashboardProps) {
   const orderedBanks = [...sortBanksForDisplay(banks.filter(bank => bankSubject(bank) === '数学')), ...sortBanksForDisplay(banks.filter(bank => bankSubject(bank) === '英语'))]
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(() => new Set())
@@ -116,7 +127,7 @@ export default function LearningDashboard({ banks, statuses, activities, selecte
             return <div className="section-progress-item" key={section.id}>
               <button className="section-progress-row" aria-expanded={expanded} onClick={() => setExpandedSectionIds(previous => { const next = new Set(previous); if (expanded) next.delete(section.id); else next.add(section.id); return next })}>
                 <div><strong>{section.name}<ChevronDown className={expanded ? 'rotated' : ''} size={14}/></strong><small>{stats.marked} / {stats.total} 道已标记</small></div>
-                <div className="section-progress-bar" aria-label={`${section.name} 学习进度 ${formatRate(stats.completion)}`}><i style={{ width: formatRate(stats.completion) }}/></div>
+                <MasteryProgressBar stats={stats} label={section.name} binaryMode={selectedBankIsEnglish}/>
                 <div className="section-progress-rate"><span>正确率</span><strong>{formatRate(stats.accuracy)}</strong></div>
                 <div className="section-progress-counts"><span className="green-text">{stats.proficient} 正确</span><span className="yellow-text">{stats.vague} 模糊</span><span className="red-text">{stats.wrong} 错误</span></div>
               </button>

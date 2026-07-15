@@ -153,8 +153,12 @@
 .section-progress-row > div:first-child strong svg { color: #9c756f; transition: transform .2s; }
 .section-progress-row > div:first-child strong svg.rotated { transform: rotate(180deg); }
 .section-progress-row > div:first-child small { display: block; margin-top: 5px; color: #aaa199; font-size: 9px; }
-.section-progress-bar { height: 6px; overflow: hidden; border-radius: 4px; background: #eeeae5; }
-.section-progress-bar i { display: block; height: 100%; border-radius: inherit; background: #9f2e25; }
+.section-progress-bar { display: flex; height: 7px; overflow: hidden; border-radius: 4px; background: #eeeae5; }
+.section-progress-bar i { display: block; flex: 0 0 auto; height: 100%; }
+.section-progress-bar i.proficient { background: #58a174; }
+.section-progress-bar i.vague { background: #d79d31; }
+.section-progress-bar i.wrong { background: #bd4940; }
+.mastery-progress-bar { box-shadow: inset 0 0 0 1px rgba(111, 96, 82, .035); }
 .section-progress-rate span { display: block; color: #918a81; font-size: 8px; }
 .section-progress-rate strong { display: block; margin-top: 3px; font-size: 13px; }
 .section-progress-counts { display: flex; justify-content: flex-end; gap: 11px; font-size: 9px; white-space: nowrap; }
