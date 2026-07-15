@@ -68,6 +68,7 @@ export default function App() {
   const [newBankOpen, setNewBankOpen] = useState(false)
   const [newBankName, setNewBankName] = useState('')
   const [namingHelpOpen, setNamingHelpOpen] = useState(false)
+  const [settingsToolsOpen, setSettingsToolsOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{ kind: 'bank' | 'chapter'; id: string; name: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [navigationReady, setNavigationReady] = useState(false)
@@ -80,10 +81,19 @@ export default function App() {
   const importRef = useRef<HTMLInputElement>(null)
   const imageImportRef = useRef<HTMLInputElement>(null)
   const printSheetRef = useRef<HTMLElement>(null)
+  const settingsToolsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (!saveBanks(banks)) setToast('浏览器存储空间不足，题库修改尚未保存；请连接题库文件夹或先导出备份') }, [banks])
   useEffect(() => { if (!saveStatuses(statuses)) setToast('学习标记保存失败，请先导出备份后检查浏览器存储空间') }, [statuses])
   useEffect(() => { if (!saveStudyActivities(activities)) setToast('每日学习记录保存失败，请先导出备份后检查浏览器存储空间') }, [activities])
+  useEffect(() => {
+    if (!settingsToolsOpen) return
+    const closeOnOutside = (event: PointerEvent) => { if (!settingsToolsRef.current?.contains(event.target as Node)) setSettingsToolsOpen(false) }
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setSettingsToolsOpen(false) }
+    document.addEventListener('pointerdown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => { document.removeEventListener('pointerdown', closeOnOutside); document.removeEventListener('keydown', closeOnEscape) }
+  }, [settingsToolsOpen])
   useEffect(() => {
     loadWorkspaceHandle().then(async handle => {
       if (!handle) { await loadDefaultWorkspace(); return }
@@ -609,19 +619,14 @@ export default function App() {
       <div className="header-actions">
         <input ref={importRef} hidden type="file" accept=".json,application/json" onChange={e => importData(e.target.files?.[0])}/>
         <input ref={node => { imageImportRef.current = node; node?.setAttribute('webkitdirectory', '') }} hidden type="file" multiple accept="image/*" onChange={e => importImages(e.target.files)}/>
-        <div className="header-action-group import-tools">
-          <button className={workspaceState === 'connected' ? 'tool-button workspace-connected primary-tool' : 'tool-button primary-tool'} title="连接本地题库文件夹并实时同步" onClick={connectWorkspace}><FolderSync/><span>{workspaceState === 'connected' ? '已连接' : '题库文件夹'}</span></button>
-          {workspaceState === 'connected' && <button className="tool-button" title="切换到其他本地题库目录" aria-label="切换本地题库" onClick={switchWorkspace}><FolderOpen/><span>切换题库</span></button>}
-          <button className="tool-button" title="导入 JSON 题库" onClick={() => importRef.current?.click()}><FileUp/><span>导入</span></button>
-          <button className="tool-button" title="批量导入题目图和答案图" onClick={() => imageImportRef.current?.click()}><FileImage/><span>图片</span></button>
-        </div>
-        <div className="header-action-group utility-tools">
-          <button className="tool-button icon-tool" title="查看图片命名参考" aria-label="图片命名参考" onClick={() => setNamingHelpOpen(true)}><CircleHelp/></button>
-          <button className="tool-button icon-tool" title="设置与数据管理" aria-label="设置与数据管理" onClick={() => setSettingsOpen(true)}><SettingsIcon/></button>
-        </div>
-        <div className="header-action-group output-tools">
-          <button className="tool-button" title="导出 PDF 或图片" onClick={() => setExportOpen(true)}><FileText/><span>导出</span></button>
-          <button className="tool-button" title="备份题库数据" onClick={exportData}><Download/><span>备份</span></button>
+        <div className="settings-tools-module" ref={settingsToolsRef}>
+          <button className={settingsToolsOpen ? 'tool-button settings-tools-trigger active' : 'tool-button settings-tools-trigger'} aria-haspopup="menu" aria-expanded={settingsToolsOpen} onClick={() => setSettingsToolsOpen(open => !open)}><SettingsIcon/><span>设置</span><ChevronDown/></button>
+          {settingsToolsOpen && <div className="settings-tools-popover" role="menu"><div className="settings-tools-heading"><div><strong>设置与数据</strong><small>题库连接、素材、导出和个人数据统一管理</small></div><button aria-label="关闭设置" onClick={() => setSettingsToolsOpen(false)}><X/></button></div>
+            <section><span>题库连接</span><div><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); connectWorkspace() }}><FolderSync/><span><strong>{workspaceState === 'connected' ? '重新同步题库' : '连接题库文件夹'}</strong><small>{workspaceState === 'connected' ? '重新读取当前题库与用户数据' : '连接本地目录并启用实时保存'}</small></span></button><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); switchWorkspace() }}><FolderOpen/><span><strong>切换题库文件夹</strong><small>选择另一套本地题库目录</small></span></button></div></section>
+            <section><span>导入与素材</span><div><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); importRef.current?.click() }}><FileUp/><span><strong>导入题库</strong><small>载入 JSON 题库或完整备份</small></span></button><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); imageImportRef.current?.click() }}><FileImage/><span><strong>导入图片</strong><small>按命名规则匹配题图与解析图</small></span></button></div></section>
+            <section><span>规则与管理</span><div><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); setNamingHelpOpen(true) }}><CircleHelp/><span><strong>图片命名参考</strong><small>查看批量导入的文件命名规范</small></span></button><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); setSettingsOpen(true) }}><SettingsIcon/><span><strong>题库与数据管理</strong><small>清理标记、重置或删除题库</small></span></button></div></section>
+            <section><span>导出与备份</span><div><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); setExportOpen(true) }}><FileText/><span><strong>导出题目</strong><small>按当前范围生成 PDF 或图片</small></span></button><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); exportData() }}><Download/><span><strong>完整备份</strong><small>保存题库、标记和每日学习记录</small></span></button></div></section>
+          </div>}
         </div>
       </div>
     </header>
