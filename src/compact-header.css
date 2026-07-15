@@ -147,6 +147,10 @@
   position: relative;
 }
 
+.header-actions {
+  margin-left: auto;
+}
+
 .exam-countdown {
   position: absolute;
   left: 50%;
