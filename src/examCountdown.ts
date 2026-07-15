@@ -1,5 +1,4 @@
 const DAY_MS = 24 * 60 * 60 * 1000
-const EXAM_DATE_KEY = 'npee:exam-date:v1'
 
 export interface ExamCountdown {
   cohortYear: number
@@ -25,18 +24,6 @@ export function parseExamDateValue(value: string) {
   if (!match) return null
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
   return formatExamDateValue(date) === value ? date : null
-}
-
-export function loadSavedExamDate() {
-  try { return parseExamDateValue(localStorage.getItem(EXAM_DATE_KEY) || '') } catch { return null }
-}
-
-export function saveExamDate(date: Date) {
-  try { localStorage.setItem(EXAM_DATE_KEY, formatExamDateValue(date)); return true } catch { return false }
-}
-
-export function clearSavedExamDate() {
-  try { localStorage.removeItem(EXAM_DATE_KEY) } catch { /* 浏览器禁用存储时仍可恢复本次会话的默认值 */ }
 }
 
 export function getExamCountdown(now = new Date(), customTarget: Date | null = null): ExamCountdown {

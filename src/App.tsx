@@ -18,7 +18,8 @@ import { mergeStudyActivities, updateStudyActivity, validateStudyActivities } fr
 import { calculateLearningStats, calculateQuestionStats, formatRate } from './learningStats'
 import { resolveNavigation, resolveProfileBankId, type SavedNavigation } from './navigationRestore'
 import { migrateZhangyuActivities, migrateZhangyuStatuses, removeRetiredBanks } from './bankMigration'
-import { clearSavedExamDate, formatExamDateValue, getExamCountdown, loadSavedExamDate, parseExamDateValue, saveExamDate } from './examCountdown'
+import { formatExamDateValue, getExamCountdown, parseExamDateValue } from './examCountdown'
+import { loadUserSettings, saveUserSettings, validateUserSettings } from './userSettings'
 
 const statusMeta: Record<QuestionStatus, { label: string; icon: string }> = {
   none: { label: '未标记', icon: '○' }, proficient: { label: '熟练', icon: '✓' }, vague: { label: '模糊', icon: '?' }, wrong: { label: '错题', icon: '×' }
@@ -71,7 +72,7 @@ export default function App() {
   const [namingHelpOpen, setNamingHelpOpen] = useState(false)
   const [settingsToolsOpen, setSettingsToolsOpen] = useState(false)
   const [countdownNow, setCountdownNow] = useState(() => new Date())
-  const [customExamDate, setCustomExamDate] = useState(loadSavedExamDate)
+  const [userSettings, setUserSettings] = useState(loadUserSettings)
   const [renameTarget, setRenameTarget] = useState<{ kind: 'bank' | 'chapter'; id: string; name: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [navigationReady, setNavigationReady] = useState(false)
@@ -89,6 +90,7 @@ export default function App() {
   useEffect(() => { if (!saveBanks(banks)) setToast('浏览器存储空间不足，题库修改尚未保存；请连接题库文件夹或先导出备份') }, [banks])
   useEffect(() => { if (!saveStatuses(statuses)) setToast('学习标记保存失败，请先导出备份后检查浏览器存储空间') }, [statuses])
   useEffect(() => { if (!saveStudyActivities(activities)) setToast('每日学习记录保存失败，请先导出备份后检查浏览器存储空间') }, [activities])
+  useEffect(() => { if (!saveUserSettings(userSettings)) setToast('用户设置保存失败，请检查浏览器存储空间') }, [userSettings])
   useEffect(() => { const timer = window.setInterval(() => setCountdownNow(new Date()), 60 * 60 * 1000); return () => window.clearInterval(timer) }, [])
   useEffect(() => {
     if (!settingsToolsOpen) return
@@ -125,12 +127,12 @@ export default function App() {
     if (workspaceState !== 'connected' || !workspaceReady.current) return
     const timer = window.setTimeout(() => {
       const save = defaultWorkspaceConnected
-        ? writeDefaultWorkspaceUserData(statuses, activities)
-        : workspaceHandle ? writeWorkspaceUserData(workspaceHandle, statuses, activities) : Promise.resolve()
+        ? writeDefaultWorkspaceUserData(statuses, activities, userSettings)
+        : workspaceHandle ? writeWorkspaceUserData(workspaceHandle, statuses, activities, userSettings) : Promise.resolve()
       save.catch(() => setWorkspaceState('error'))
     }, 450)
     return () => window.clearTimeout(timer)
-  }, [statuses, activities, workspaceHandle, workspaceState, defaultWorkspaceConnected])
+  }, [statuses, activities, userSettings, workspaceHandle, workspaceState, defaultWorkspaceConnected])
   useEffect(() => {
     restoreSavedNavigation(banks, statuses)
     setNavigationReady(true)
@@ -358,7 +360,7 @@ export default function App() {
     return <label className="reading-type-picker"><span>阅读题型</span><select aria-label={`第 ${item.number} 题阅读题型`} value={item.readingType || ''} onChange={event => markReadingType(item.id, event.target.value as ReadingQuestionType | '')}><option value="">未分类</option>{readingTypeMeta.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select><ChevronDown size={13}/></label>
   }
   function exportData() {
-    const blob = new Blob([JSON.stringify({ version: 1, banks, statuses, activities }, null, 2)], { type: 'application/json' })
+    const blob = new Blob([JSON.stringify({ version: 2, banks, statuses, activities, settings: userSettings }, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `考研学习空间备份-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url)
   }
   function exportSingleBank(targetBank: QuestionBank) {
@@ -422,7 +424,7 @@ export default function App() {
     const removableBanks = banks.filter(item => !protectedBankIds.has(item.id))
     await deleteAssets(removableBanks.flatMap(assetKeysForBank))
     const defaults = [...structuredClone(protectedBanks), ...structuredClone(builtInBanks).filter(item => !protectedBankIds.has(item.id))]
-    setBanks(defaults); setStatuses({}); setActivities([]); setBankId(defaults[0].id); setSectionId(defaults[0].chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setView('section'); setSettingsOpen(false); setToast('已恢复出厂设置，默认题库已保留')
+    setBanks(defaults); setStatuses({}); setActivities([]); setUserSettings({}); setBankId(defaults[0].id); setSectionId(defaults[0].chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setView('section'); setSettingsOpen(false); setToast('已恢复出厂设置，默认题库已保留')
   }
   function printExport(job: ExportJob) {
     if (!job.questions.length) { setToast('当前条件下没有可导出的题目'); return }
@@ -437,6 +439,7 @@ export default function App() {
       setBanks(prev => [...prev.filter(b => !imported.some(i => i.id === b.id)), ...imported])
       if (parsed.statuses) setStatuses(prev => ({ ...prev, ...validateStatuses(parsed.statuses) }))
       if (parsed.activities) setActivities(previous => mergeStudyActivities(previous, validateStudyActivities(parsed.activities)))
+      if (parsed.settings) setUserSettings(validateUserSettings(parsed.settings))
       setToast(`成功导入 ${imported.length} 个题库`)
     } catch (e) { setToast(e instanceof Error ? e.message : '导入失败') }
     if (importRef.current) importRef.current.value = ''
@@ -465,6 +468,7 @@ export default function App() {
       const storedStatuses = index.userData?.statuses || index.manifest?.statuses
       const nextStatuses = storedStatuses ? migrateZhangyuStatuses(validateStatuses(storedStatuses)) : statuses
       const nextActivities = index.userData?.activities ? migrateZhangyuActivities(validateStudyActivities(index.userData.activities)) : activities
+      const nextSettings = index.userData?.settings ? validateUserSettings(index.userData.settings) : userSettings
       const folders = { ...(index.manifest?.folders || {}) }
       for (const folderName of new Set(index.images.map(item => item.bankFolder).filter(Boolean))) {
         let target = nextBanks.find(item => folders[item.id] === folderName || safeFolderName(item.name) === folderName)
@@ -487,7 +491,7 @@ export default function App() {
         }
       }
       workspaceReady.current = false
-      setBanks(result.banks); setStatuses(nextStatuses); setActivities(nextActivities); setWorkspaceFolders(folders); setWorkspaceHandle(null); setDefaultWorkspaceConnected(true); setWorkspaceState('connected')
+      setBanks(result.banks); setStatuses(nextStatuses); setActivities(nextActivities); setUserSettings(nextSettings); setWorkspaceFolders(folders); setWorkspaceHandle(null); setDefaultWorkspaceConnected(true); setWorkspaceState('connected')
       window.setTimeout(() => {
         workspaceReady.current = true
       }, 0)
@@ -513,6 +517,7 @@ export default function App() {
       const storedStatuses = userData?.statuses || manifest?.statuses
       const nextStatuses = storedStatuses ? migrateZhangyuStatuses(validateStatuses(storedStatuses)) : statuses
       const nextActivities = userData?.activities ? migrateZhangyuActivities(validateStudyActivities(userData.activities)) : activities
+      const nextSettings = userData?.settings ? validateUserSettings(userData.settings) : userSettings
       const images = await scanWorkspaceImages(handle, Object.values(manifest?.folders || {}))
       const folders = { ...(manifest?.folders || {}) }
       for (const folderName of new Set(images.map(item => item.bankFolder).filter(Boolean))) {
@@ -541,7 +546,7 @@ export default function App() {
         }
       }
       workspaceReady.current = false
-      setBanks(result.banks); setStatuses(nextStatuses); setActivities(nextActivities); setWorkspaceFolders(folders); setWorkspaceHandle(handle); setDefaultWorkspaceConnected(false)
+      setBanks(result.banks); setStatuses(nextStatuses); setActivities(nextActivities); setUserSettings(nextSettings); setWorkspaceFolders(folders); setWorkspaceHandle(handle); setDefaultWorkspaceConnected(false)
       setWorkspaceState('connected')
       window.setTimeout(() => {
         workspaceReady.current = true
@@ -581,7 +586,7 @@ export default function App() {
   async function switchWorkspace() {
     try {
       if (workspaceHandle && workspaceState === 'connected') {
-        void Promise.all([writeWorkspaceManifest(workspaceHandle, banks, workspaceFolders), writeWorkspaceUserData(workspaceHandle, statuses, activities)]).catch(() => {})
+        void Promise.all([writeWorkspaceManifest(workspaceHandle, banks, workspaceFolders), writeWorkspaceUserData(workspaceHandle, statuses, activities, userSettings)]).catch(() => {})
       }
       const handle = await chooseWorkspace()
       await loadWorkspace(handle)
@@ -610,18 +615,20 @@ export default function App() {
 
   if (!bank) return <div className="empty-app"><BookOpen size={42}/><h1>还没有题库</h1><button onClick={() => importRef.current?.click()}>导入题库</button><input ref={importRef} hidden type="file" accept=".json" onChange={e => importData(e.target.files?.[0])}/></div>
 
+  const customExamDate = parseExamDateValue(userSettings.examDate || '')
   const examCountdown = getExamCountdown(countdownNow, customExamDate)
   const examDateLabel = `${examCountdown.target.getMonth() + 1} 月 ${examCountdown.target.getDate()} 日`
   const updateExamDate = (value: string) => {
     const date = parseExamDateValue(value)
     if (!date) return
-    setCustomExamDate(date)
-    if (!saveExamDate(date)) setToast('日期已修改，但浏览器未能持久保存')
-    else setToast(`考试日期已修改为 ${date.getMonth() + 1} 月 ${date.getDate()} 日`)
+    setUserSettings(previous => ({ ...previous, examDate: formatExamDateValue(date) }))
+    setToast(`考试日期已修改为 ${date.getMonth() + 1} 月 ${date.getDate()} 日`)
   }
   const resetExamDate = () => {
-    clearSavedExamDate()
-    setCustomExamDate(null)
+    setUserSettings(previous => {
+      const { examDate: _removed, ...rest } = previous
+      return rest
+    })
     setToast('已恢复默认考试日期')
   }
 
@@ -642,7 +649,7 @@ export default function App() {
         <div className="settings-tools-module" ref={settingsToolsRef}>
           <button className={settingsToolsOpen ? 'tool-button settings-tools-trigger active' : 'tool-button settings-tools-trigger'} aria-haspopup="menu" aria-expanded={settingsToolsOpen} onClick={() => setSettingsToolsOpen(open => !open)}><SettingsIcon/><span>设置</span><ChevronDown/></button>
           {settingsToolsOpen && <div className="settings-tools-popover" role="menu"><div className="settings-tools-heading"><div><strong>设置与数据</strong><small>题库连接、素材、导出和个人数据统一管理</small></div><button aria-label="关闭设置" onClick={() => setSettingsToolsOpen(false)}><X/></button></div>
-            <section className="countdown-settings-section"><span>考试倒计时</span><div><label><CalendarDays/><span><strong>考试日期</strong><small>修改后倒计时会立即更新</small></span><input aria-label="考试日期" type="date" min={formatExamDateValue(countdownNow)} value={formatExamDateValue(examCountdown.target)} onInput={event => updateExamDate(event.currentTarget.value)}/></label><button type="button" onClick={resetExamDate} disabled={!customExamDate}>恢复默认</button></div><small>日期仅保存在当前浏览器，不会写入题库或学习数据。</small></section>
+            <section className="countdown-settings-section"><span>考试倒计时</span><div><label><CalendarDays/><span><strong>考试日期</strong><small>修改后倒计时会立即更新</small></span><input aria-label="考试日期" type="date" min={formatExamDateValue(countdownNow)} value={formatExamDateValue(examCountdown.target)} onInput={event => updateExamDate(event.currentTarget.value)}/></label><button type="button" onClick={resetExamDate} disabled={!customExamDate}>恢复默认</button></div><small>日期保存在独立的用户数据中，可随备份和工作区同步，不会写入题库。</small></section>
             <section><span>题库连接</span><div><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); connectWorkspace() }}><FolderSync/><span><strong>{workspaceState === 'connected' ? '重新同步题库' : '连接题库文件夹'}</strong><small>{workspaceState === 'connected' ? '重新读取当前题库与用户数据' : '连接本地目录并启用实时保存'}</small></span></button><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); switchWorkspace() }}><FolderOpen/><span><strong>切换题库文件夹</strong><small>选择另一套本地题库目录</small></span></button></div></section>
             <section><span>导入与素材</span><div><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); importRef.current?.click() }}><FileUp/><span><strong>导入题库</strong><small>载入 JSON 题库或完整备份</small></span></button><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); imageImportRef.current?.click() }}><FileImage/><span><strong>导入图片</strong><small>按命名规则匹配题图与解析图</small></span></button></div></section>
             <section><span>规则与管理</span><div><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); setNamingHelpOpen(true) }}><CircleHelp/><span><strong>图片命名参考</strong><small>查看批量导入的文件命名规范</small></span></button><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); setSettingsOpen(true) }}><SettingsIcon/><span><strong>题库与数据管理</strong><small>清理标记、重置或删除题库</small></span></button></div></section>
