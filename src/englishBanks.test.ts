@@ -30,6 +30,46 @@ describe('English exam bank data', () => {
     })
   })
 
+  it('keeps original answer analysis images for every supplied analysis PDF', () => {
+    bank.chapters.filter(chapter => yearOf(chapter) <= 2025).forEach(chapter => {
+      chapter.sections.flatMap(section => section.questions).forEach(question => {
+        expect(question.answerImageUrl || question.answerImageKeys?.length).toBeTruthy()
+      })
+    })
+  })
+
+  it('uses per-question analysis crops for 2005-2009 standard reading questions', () => {
+    bank.chapters.filter(chapter => {
+      const year = yearOf(chapter)
+      return year >= 2005 && year <= 2009
+    }).forEach(chapter => {
+      chapter.sections.flatMap(section => section.questions).filter(question =>
+        (question.number >= 21 && question.number <= 40) || (question.number >= 46 && question.number <= 50)
+      ).forEach(question => {
+        expect(question.answerImageUrl).toContain(`q${String(question.number).padStart(2, '0')}.webp`)
+      })
+    })
+  })
+
+  it('uses complete per-question PDF crops for 2010-2024', () => {
+    bank.chapters.filter(chapter => {
+      const year = yearOf(chapter)
+      return year >= 2010 && year <= 2024
+    }).forEach(chapter => {
+      const year = yearOf(chapter)
+      const questions = chapter.sections.flatMap(section => section.questions)
+      const independent = questions.filter(question =>
+        (question.number >= 1 && question.number <= 40) ||
+        (question.number >= 46 && question.number <= 50)
+      )
+      expect(independent).toHaveLength(45)
+      expect(new Set(independent.map(question => question.answerImageUrl))).toHaveLength(45)
+      independent.forEach(question => {
+        expect(question.answerImageUrl).toContain(`analysis-${year}-q${String(question.number).padStart(2, '0')}.webp`)
+      })
+    })
+  })
+
   it('does not append the source passage to a short option bank', () => {
     sections.forEach(({ section }) => {
       const options = section.questions[0].options || []

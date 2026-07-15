@@ -68,12 +68,20 @@ def crop_between(pdf, start: tuple[int, float], end: tuple[int, float], resoluti
     pieces = []
     for page_index in range(start[0], end[0] + 1):
         page = pdf.pages[page_index]
-        top = start[1] - 10 if page_index == start[0] else 24
-        bottom = end[1] - 12 if page_index == end[0] else page.height - 28
+        # Scanned pages are often slightly skewed.  Removing a conventional
+        # 24–28 pt page margin can therefore slice through the right-hand half
+        # of the final printed line (2005 Q24 is a concrete example).  Keep all
+        # but a very narrow edge on intermediate pages; question anchors still
+        # provide the precise boundary on the final page.
+        top = start[1] - 10 if page_index == start[0] else 6
+        bottom = end[1] - 12 if page_index == end[0] else page.height - 4
         if bottom <= top + 8:
             continue
         rendered = page.to_image(resolution=resolution, antialias=True).original.convert("RGB")
-        box = (int(22 * scale), max(0, int(top * scale)), int((page.width - 22) * scale), min(rendered.height, int(bottom * scale)))
+        # Preserve the full PDF page width.  Older scans frequently place the
+        # final characters very close to either edge, so even a small fixed
+        # horizontal margin can cut text.
+        box = (0, max(0, int(top * scale)), rendered.width, min(rendered.height, int(bottom * scale)))
         piece = rendered.crop(box)
         if piece.height > 12:
             pieces.append(piece)
