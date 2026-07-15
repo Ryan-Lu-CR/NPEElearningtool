@@ -14,15 +14,15 @@ beforeEach(() => {
 
 describe('用户设置', () => {
   it('只保留合法设置并可往返保存', () => {
-    expect(validateUserSettings({ examDate: '2026-12-19', unknown: true })).toEqual({ examDate: '2026-12-19' })
-    expect(validateUserSettings({ examDate: '2026-02-29' })).toEqual({})
-    expect(saveUserSettings({ examDate: '2026-12-25' })).toBe(true)
-    expect(loadUserSettings()).toEqual({ examDate: '2026-12-25' })
+    expect(validateUserSettings({ examDate: '2026-12-19', unknown: true })).toEqual({ examDate: '2026-12-19', activeRound: 1, roundCount: 5 })
+    expect(validateUserSettings({ examDate: '2026-02-29' })).toEqual({ activeRound: 1, roundCount: 5 })
+    expect(saveUserSettings({ examDate: '2026-12-25', activeRound: 3, roundCount: 5 })).toBe(true)
+    expect(loadUserSettings()).toEqual({ examDate: '2026-12-25', activeRound: 3, roundCount: 5 })
   })
 
   it('自动迁移旧版单独的考试日期', () => {
     localStorage.setItem('npee:exam-date:v1', '2026-12-20')
-    expect(loadUserSettings()).toEqual({ examDate: '2026-12-20' })
+    expect(loadUserSettings()).toEqual({ examDate: '2026-12-20', activeRound: 1, roundCount: 5 })
     expect(localStorage.getItem('npee:exam-date:v1')).toBeNull()
     expect(localStorage.getItem('npee:settings:v1')).toContain('2026-12-20')
   })

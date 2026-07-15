@@ -5,16 +5,23 @@ const LEGACY_EXAM_DATE_KEY = 'npee:exam-date:v1'
 
 export interface UserSettings {
   examDate?: string
+  activeRound: number
+  roundCount: number
 }
+
+export const DEFAULT_USER_SETTINGS: UserSettings = { activeRound: 1, roundCount: 5 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export function validateUserSettings(value: unknown): UserSettings {
-  if (!isRecord(value)) return {}
+  if (!isRecord(value)) return { ...DEFAULT_USER_SETTINGS }
   const examDate = typeof value.examDate === 'string' && parseExamDateValue(value.examDate) ? value.examDate : undefined
-  return examDate ? { examDate } : {}
+  const requestedRound = Number.isInteger(value.activeRound) && Number(value.activeRound) > 0 ? Math.min(99, Number(value.activeRound)) : 1
+  const requestedCount = Number.isInteger(value.roundCount) && Number(value.roundCount) > 0 ? Math.min(99, Number(value.roundCount)) : 5
+  const roundCount = Math.max(5, requestedRound, requestedCount)
+  return { ...(examDate ? { examDate } : {}), activeRound: requestedRound, roundCount }
 }
 
 export function saveUserSettings(settings: UserSettings) {
@@ -31,5 +38,5 @@ export function loadUserSettings(): UserSettings {
     saveUserSettings(migrated)
     localStorage.removeItem(LEGACY_EXAM_DATE_KEY)
     return migrated
-  } catch { return {} }
+  } catch { return { ...DEFAULT_USER_SETTINGS } }
 }

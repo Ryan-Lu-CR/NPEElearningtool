@@ -1,6 +1,7 @@
 import type { QuestionBank, QuestionStatus } from './types'
 import type { StudyActivity } from './studyActivity'
-import { validateUserSettings, type UserSettings } from './userSettings'
+import { validateStudyRounds, type StudyRounds } from './studyRounds'
+import { DEFAULT_USER_SETTINGS, validateUserSettings, type UserSettings } from './userSettings'
 
 const DB_NAME = 'npee-workspace'
 const STORE_NAME = 'handles'
@@ -34,11 +35,13 @@ export interface WorkspaceManifest {
 }
 
 export interface WorkspaceUserData {
-  version: 2
+  version: number
   updatedAt: string
-  statuses: Record<string, QuestionStatus>
+  rounds?: StudyRounds
+  /** 兼容 v2 及更早版本，读取后会迁移到第 1 轮。 */
+  statuses?: Record<string, QuestionStatus>
   activities?: StudyActivity[]
-  settings: UserSettings
+  settings?: UserSettings
 }
 
 export interface DefaultWorkspaceIndex {
@@ -58,8 +61,8 @@ export function createWorkspaceManifest(banks: QuestionBank[], folders: Record<s
   return { version: 1, builtinEnglishVersion: BUILTIN_ENGLISH_VERSION, updatedAt: new Date().toISOString(), banks, folders }
 }
 
-export function createWorkspaceUserData(statuses: Record<string, QuestionStatus>, activities: StudyActivity[] = [], settings: UserSettings = {}): WorkspaceUserData {
-  return { version: 2, updatedAt: new Date().toISOString(), statuses, activities, settings: validateUserSettings(settings) }
+export function createWorkspaceUserData(rounds: StudyRounds, settings: UserSettings = DEFAULT_USER_SETTINGS): WorkspaceUserData {
+  return { version: 3, updatedAt: new Date().toISOString(), rounds: validateStudyRounds(rounds), settings: validateUserSettings(settings) }
 }
 
 export async function writeDefaultWorkspaceManifest(banks: QuestionBank[], folders: Record<string, string> = {}) {
@@ -68,8 +71,8 @@ export async function writeDefaultWorkspaceManifest(banks: QuestionBank[], folde
   if (!response.ok) throw new Error('默认题库数据写入失败')
 }
 
-export async function writeDefaultWorkspaceUserData(statuses: Record<string, QuestionStatus>, activities: StudyActivity[] = [], settings: UserSettings = {}) {
-  const userData = createWorkspaceUserData(statuses, activities, settings)
+export async function writeDefaultWorkspaceUserData(rounds: StudyRounds, settings: UserSettings = DEFAULT_USER_SETTINGS) {
+  const userData = createWorkspaceUserData(rounds, settings)
   const response = await fetch('/api/default-workspace/user-data', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userData, null, 2) })
   if (!response.ok) throw new Error('用户数据写入失败')
 }
@@ -143,10 +146,10 @@ export async function writeWorkspaceManifest(handle: FileSystemDirectoryHandle, 
   await writable.close()
 }
 
-export async function writeWorkspaceUserData(handle: FileSystemDirectoryHandle, statuses: Record<string, QuestionStatus>, activities: StudyActivity[] = [], settings: UserSettings = {}) {
+export async function writeWorkspaceUserData(handle: FileSystemDirectoryHandle, rounds: StudyRounds, settings: UserSettings = DEFAULT_USER_SETTINGS) {
   const fileHandle = await handle.getFileHandle(WORKSPACE_USER_DATA, { create: true })
   const writable = await fileHandle.createWritable()
-  await writable.write(JSON.stringify(createWorkspaceUserData(statuses, activities, settings), null, 2))
+  await writable.write(JSON.stringify(createWorkspaceUserData(rounds, settings), null, 2))
   await writable.close()
 }
 

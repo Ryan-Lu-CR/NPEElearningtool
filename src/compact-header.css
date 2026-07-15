@@ -334,12 +334,14 @@
   display: block;
 }
 
-.settings-tools-popover .countdown-settings-section > div {
+.settings-tools-popover .countdown-settings-section > div,
+.settings-tools-popover .round-settings-section > div {
   display: flex;
   gap: 8px;
 }
 
-.countdown-settings-section > div > label {
+.countdown-settings-section > div > label,
+.round-settings-section > div > label {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
   gap: 9px;
@@ -352,22 +354,33 @@
   background: #fbfaf8;
 }
 
-.countdown-settings-section label > svg {
+.countdown-settings-section label > svg,
+.round-settings-section label > svg {
   width: 18px;
   justify-self: center;
   color: #9f2e25;
 }
 
 .countdown-settings-section label strong,
-.countdown-settings-section label small {
+.countdown-settings-section label small,
+.round-settings-section label strong,
+.round-settings-section label small {
   display: block;
 }
 
-.countdown-settings-section label strong { font-size: 11px; }
-.countdown-settings-section label small { margin-top: 3px; color: #9b938a; font-size: 8px; }
+.countdown-settings-section label strong,
+.round-settings-section label strong { font-size: 11px; }
+.countdown-settings-section label small,
+.round-settings-section label small { margin-top: 3px; color: #9b938a; font-size: 8px; }
 .countdown-settings-section input { min-width: 126px; padding: 7px 8px; border: 1px solid #ddd5cd; border-radius: 7px; background: #fff; color: #514a44; font-size: 10px; }
-.countdown-settings-section > div > button { padding: 0 12px; border: 1px solid #e2dad1; border-radius: 9px; background: #fff; color: #7f3b34; font-size: 9px; }
-.countdown-settings-section > small { display: block; margin: 7px 3px 0; color: #a09890; font-size: 8px; line-height: 1.5; }
+.round-settings-section select { min-width: 154px; padding: 7px 28px 7px 8px; border: 1px solid #ddd5cd; border-radius: 7px; background: #fff; color: #514a44; font-size: 10px; }
+.countdown-settings-section > div > button,
+.round-settings-section > div > button { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 0 12px; border: 1px solid #e2dad1; border-radius: 9px; background: #fff; color: #7f3b34; font-size: 9px; white-space: nowrap; }
+.round-settings-section > div > button svg { width: 13px; }
+.countdown-settings-section > div > button:disabled,
+.round-settings-section > div > button:disabled { color: #aaa29a; cursor: default; }
+.countdown-settings-section > small,
+.round-settings-section > small { display: block; margin: 7px 3px 0; color: #a09890; font-size: 8px; line-height: 1.5; }
 
 .settings-tools-popover section button[role='menuitem'] strong {
   font-size: 11px;
@@ -394,6 +407,8 @@
 @media screen and (max-width: 580px) {
   .settings-tools-popover { position: fixed; top: 70px; right: 10px; left: 10px; width: auto; }
   .settings-tools-popover section > div { grid-template-columns: 1fr; }
-  .settings-tools-popover .countdown-settings-section > div { flex-direction: column; }
-  .countdown-settings-section > div > button { min-height: 36px; }
+  .settings-tools-popover .countdown-settings-section > div,
+  .settings-tools-popover .round-settings-section > div { flex-direction: column; }
+  .countdown-settings-section > div > button,
+  .round-settings-section > div > button { min-height: 36px; }
 }

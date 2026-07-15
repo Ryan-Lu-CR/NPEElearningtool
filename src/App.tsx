@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, BookOpen, CalendarDays, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, FolderOpen, FolderSync, Menu, Pencil, Plus, RotateCcw, Search, Settings as SettingsIcon, X } from 'lucide-react'
 import type { Question, QuestionBank, QuestionStatus, ReadingQuestionType, Section } from './types'
-import { loadBanks, loadNavigation, loadStatuses, loadStudyActivities, renameBank, renameChapter, saveBanks, saveNavigation, saveStatuses, saveStudyActivities, validateBanks, validateStatuses } from './store'
+import { loadBanks, loadNavigation, renameBank, renameChapter, saveBanks, saveNavigation, validateBanks } from './store'
 import { deleteAssets } from './assets'
 import AssetGallery from './AssetGallery'
 import ExportDialog, { ExportPage, waitForExportContent, type ExportJob } from './ExportDialog'
@@ -14,12 +14,13 @@ import { formatPassageParagraphs } from './passageFormatting'
 import { isImageAnswerPlaceholder } from './questionPresentation'
 import { sortBanksForDisplay } from './bankSorting'
 import LearningDashboard from './LearningDashboard'
-import { mergeStudyActivities, updateStudyActivity, validateStudyActivities } from './studyActivity'
+import { updateStudyActivity } from './studyActivity'
 import { calculateLearningStats, calculateQuestionStats, formatRate } from './learningStats'
 import { resolveNavigation, resolveProfileBankId, type SavedNavigation } from './navigationRestore'
 import { migrateZhangyuActivities, migrateZhangyuStatuses, removeRetiredBanks } from './bankMigration'
 import { formatExamDateValue, getExamCountdown, parseExamDateValue } from './examCountdown'
-import { loadUserSettings, saveUserSettings, validateUserSettings } from './userSettings'
+import { DEFAULT_USER_SETTINGS, loadUserSettings, saveUserSettings, validateUserSettings } from './userSettings'
+import { countMarkedQuestions, emptyStudyRound, getStudyRound, loadStudyRounds, saveStudyRounds, updateStudyRound, validateStudyRounds, type StudyRounds } from './studyRounds'
 
 const statusMeta: Record<QuestionStatus, { label: string; icon: string }> = {
   none: { label: '未标记', icon: '○' }, proficient: { label: '熟练', icon: '✓' }, vague: { label: '模糊', icon: '?' }, wrong: { label: '错题', icon: '×' }
@@ -46,10 +47,20 @@ type BankQuestionEntry = ReturnType<typeof orderedQuestionEntriesForBank>[number
 const bankSubject = (item: QuestionBank): Subject => item.id.startsWith('english-') || /英语/i.test(item.name) ? 'english' : 'math'
 const protectedBankIds = new Set<string>(defaultBankIds)
 
+function migrateStudyRounds(value: unknown, legacyStatuses: unknown = {}, legacyActivities: unknown = []): StudyRounds {
+  return Object.fromEntries(Object.entries(validateStudyRounds(value, legacyStatuses, legacyActivities)).map(([round, data]) => [round, {
+    statuses: migrateZhangyuStatuses(data.statuses),
+    activities: migrateZhangyuActivities(data.activities),
+  }]))
+}
+
 export default function App() {
   const [banks, setBanks] = useState(loadBanks)
-  const [statuses, setStatuses] = useState(loadStatuses)
-  const [activities, setActivities] = useState(loadStudyActivities)
+  const [userSettings, setUserSettings] = useState(loadUserSettings)
+  const [studyRounds, setStudyRounds] = useState(loadStudyRounds)
+  const initialRound = getStudyRound(studyRounds, userSettings.activeRound)
+  const [statuses, setStatuses] = useState(() => initialRound.statuses)
+  const [activities, setActivities] = useState(() => initialRound.activities)
   const [bankId, setBankId] = useState(banks[0]?.id || '')
   const [sectionId, setSectionId] = useState(banks[0]?.chapters[0]?.sections[0]?.id || '')
   const [questionIndex, setQuestionIndex] = useState(0)
@@ -72,7 +83,6 @@ export default function App() {
   const [namingHelpOpen, setNamingHelpOpen] = useState(false)
   const [settingsToolsOpen, setSettingsToolsOpen] = useState(false)
   const [countdownNow, setCountdownNow] = useState(() => new Date())
-  const [userSettings, setUserSettings] = useState(loadUserSettings)
   const [renameTarget, setRenameTarget] = useState<{ kind: 'bank' | 'chapter'; id: string; name: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [navigationReady, setNavigationReady] = useState(false)
@@ -88,8 +98,10 @@ export default function App() {
   const settingsToolsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (!saveBanks(banks)) setToast('浏览器存储空间不足，题库修改尚未保存；请连接题库文件夹或先导出备份') }, [banks])
-  useEffect(() => { if (!saveStatuses(statuses)) setToast('学习标记保存失败，请先导出备份后检查浏览器存储空间') }, [statuses])
-  useEffect(() => { if (!saveStudyActivities(activities)) setToast('每日学习记录保存失败，请先导出备份后检查浏览器存储空间') }, [activities])
+  useEffect(() => {
+    const rounds = updateStudyRound(studyRounds, userSettings.activeRound, statuses, activities)
+    if (!saveStudyRounds(rounds)) setToast('学习轮次保存失败，请先导出备份后检查浏览器存储空间')
+  }, [studyRounds, userSettings.activeRound, statuses, activities])
   useEffect(() => { if (!saveUserSettings(userSettings)) setToast('用户设置保存失败，请检查浏览器存储空间') }, [userSettings])
   useEffect(() => { const timer = window.setInterval(() => setCountdownNow(new Date()), 60 * 60 * 1000); return () => window.clearInterval(timer) }, [])
   useEffect(() => {
@@ -126,13 +138,14 @@ export default function App() {
   useEffect(() => {
     if (workspaceState !== 'connected' || !workspaceReady.current) return
     const timer = window.setTimeout(() => {
+      const rounds = updateStudyRound(studyRounds, userSettings.activeRound, statuses, activities)
       const save = defaultWorkspaceConnected
-        ? writeDefaultWorkspaceUserData(statuses, activities, userSettings)
-        : workspaceHandle ? writeWorkspaceUserData(workspaceHandle, statuses, activities, userSettings) : Promise.resolve()
+        ? writeDefaultWorkspaceUserData(rounds, userSettings)
+        : workspaceHandle ? writeWorkspaceUserData(workspaceHandle, rounds, userSettings) : Promise.resolve()
       save.catch(() => setWorkspaceState('error'))
     }, 450)
     return () => window.clearTimeout(timer)
-  }, [statuses, activities, userSettings, workspaceHandle, workspaceState, defaultWorkspaceConnected])
+  }, [studyRounds, statuses, activities, userSettings, workspaceHandle, workspaceState, defaultWorkspaceConnected])
   useEffect(() => {
     restoreSavedNavigation(banks, statuses)
     setNavigationReady(true)
@@ -359,8 +372,32 @@ export default function App() {
     if (!isReadingTypeQuestion(item)) return null
     return <label className="reading-type-picker"><span>阅读题型</span><select aria-label={`第 ${item.number} 题阅读题型`} value={item.readingType || ''} onChange={event => markReadingType(item.id, event.target.value as ReadingQuestionType | '')}><option value="">未分类</option>{readingTypeMeta.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select><ChevronDown size={13}/></label>
   }
+  function currentStudyRounds() {
+    return updateStudyRound(studyRounds, userSettings.activeRound, statuses, activities)
+  }
+  function switchStudyRound(nextRound: number) {
+    if (nextRound === userSettings.activeRound) return
+    const rounds = currentStudyRounds()
+    const target = getStudyRound(rounds, nextRound)
+    setStudyRounds(rounds)
+    setUserSettings(previous => ({ ...previous, activeRound: nextRound, roundCount: Math.max(previous.roundCount, nextRound) }))
+    setStatuses(target.statuses); setActivities(target.activities); setAnswerOpen(false); setExpandedPassageAnswers(new Set())
+    setToast(`已切换到第 ${nextRound} 轮`)
+  }
+  function addStudyRound() {
+    if (userSettings.roundCount >= 99) { setToast('最多可添加 99 轮'); return }
+    const nextRound = userSettings.roundCount + 1
+    const rounds = { ...currentStudyRounds(), [String(nextRound)]: emptyStudyRound() }
+    setStudyRounds(rounds)
+    setUserSettings(previous => ({ ...previous, activeRound: nextRound, roundCount: nextRound }))
+    setStatuses({}); setActivities([]); setAnswerOpen(false); setExpandedPassageAnswers(new Set())
+    setToast(`已新增并切换到第 ${nextRound} 轮`)
+  }
+  function displayedStudyRound(round: number) {
+    return round === userSettings.activeRound ? { statuses, activities } : getStudyRound(studyRounds, round)
+  }
   function exportData() {
-    const blob = new Blob([JSON.stringify({ version: 2, banks, statuses, activities, settings: userSettings }, null, 2)], { type: 'application/json' })
+    const blob = new Blob([JSON.stringify({ version: 3, banks, rounds: currentStudyRounds(), settings: userSettings }, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `考研学习空间备份-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url)
   }
   function exportSingleBank(targetBank: QuestionBank) {
@@ -424,7 +461,7 @@ export default function App() {
     const removableBanks = banks.filter(item => !protectedBankIds.has(item.id))
     await deleteAssets(removableBanks.flatMap(assetKeysForBank))
     const defaults = [...structuredClone(protectedBanks), ...structuredClone(builtInBanks).filter(item => !protectedBankIds.has(item.id))]
-    setBanks(defaults); setStatuses({}); setActivities([]); setUserSettings({}); setBankId(defaults[0].id); setSectionId(defaults[0].chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setView('section'); setSettingsOpen(false); setToast('已恢复出厂设置，默认题库已保留')
+    setBanks(defaults); setStudyRounds({ '1': emptyStudyRound() }); setStatuses({}); setActivities([]); setUserSettings({ ...DEFAULT_USER_SETTINGS }); setBankId(defaults[0].id); setSectionId(defaults[0].chapters[0]?.sections[0]?.id || ''); setQuestionIndex(0); setView('section'); setSettingsOpen(false); setToast('已恢复出厂设置，默认题库已保留')
   }
   function printExport(job: ExportJob) {
     if (!job.questions.length) { setToast('当前条件下没有可导出的题目'); return }
@@ -437,9 +474,14 @@ export default function App() {
     try {
       const parsed = JSON.parse(await file.text()); const imported = removeRetiredBanks(validateBanks(parsed))
       setBanks(prev => [...prev.filter(b => !imported.some(i => i.id === b.id)), ...imported])
-      if (parsed.statuses) setStatuses(prev => ({ ...prev, ...validateStatuses(parsed.statuses) }))
-      if (parsed.activities) setActivities(previous => mergeStudyActivities(previous, validateStudyActivities(parsed.activities)))
-      if (parsed.settings) setUserSettings(validateUserSettings(parsed.settings))
+      if (parsed.rounds || parsed.statuses || parsed.activities) {
+        const importedSettings = parsed.settings
+          ? validateUserSettings(parsed.settings)
+          : { ...userSettings, activeRound: 1, roundCount: Math.max(5, userSettings.roundCount) }
+        const importedRounds = migrateStudyRounds(parsed.rounds, parsed.statuses, parsed.activities)
+        const targetRound = getStudyRound(importedRounds, importedSettings.activeRound)
+        setStudyRounds(importedRounds); setStatuses(targetRound.statuses); setActivities(targetRound.activities); setUserSettings(importedSettings)
+      } else if (parsed.settings) setUserSettings(validateUserSettings(parsed.settings))
       setToast(`成功导入 ${imported.length} 个题库`)
     } catch (e) { setToast(e instanceof Error ? e.message : '导入失败') }
     if (importRef.current) importRef.current.value = ''
@@ -465,10 +507,14 @@ export default function App() {
       if (index.manifest && index.manifest.builtinEnglishVersion !== BUILTIN_ENGLISH_VERSION) {
         nextBanks = [...nextBanks.filter(bank => !bank.id.startsWith('english-')), ...structuredClone(englishBanks)]
       }
-      const storedStatuses = index.userData?.statuses || index.manifest?.statuses
-      const nextStatuses = storedStatuses ? migrateZhangyuStatuses(validateStatuses(storedStatuses)) : statuses
-      const nextActivities = index.userData?.activities ? migrateZhangyuActivities(validateStudyActivities(index.userData.activities)) : activities
       const nextSettings = index.userData?.settings ? validateUserSettings(index.userData.settings) : userSettings
+      const hasStoredUserData = Boolean(index.userData || index.manifest?.statuses)
+      const nextRounds = hasStoredUserData
+        ? migrateStudyRounds(index.userData?.rounds, index.userData?.statuses || index.manifest?.statuses, index.userData?.activities)
+        : currentStudyRounds()
+      const nextRound = getStudyRound(nextRounds, nextSettings.activeRound)
+      const nextStatuses = nextRound.statuses
+      const nextActivities = nextRound.activities
       const folders = { ...(index.manifest?.folders || {}) }
       for (const folderName of new Set(index.images.map(item => item.bankFolder).filter(Boolean))) {
         let target = nextBanks.find(item => folders[item.id] === folderName || safeFolderName(item.name) === folderName)
@@ -491,7 +537,7 @@ export default function App() {
         }
       }
       workspaceReady.current = false
-      setBanks(result.banks); setStatuses(nextStatuses); setActivities(nextActivities); setUserSettings(nextSettings); setWorkspaceFolders(folders); setWorkspaceHandle(null); setDefaultWorkspaceConnected(true); setWorkspaceState('connected')
+      setBanks(result.banks); setStudyRounds(nextRounds); setStatuses(nextStatuses); setActivities(nextActivities); setUserSettings(nextSettings); setWorkspaceFolders(folders); setWorkspaceHandle(null); setDefaultWorkspaceConnected(true); setWorkspaceState('connected')
       window.setTimeout(() => {
         workspaceReady.current = true
       }, 0)
@@ -514,10 +560,14 @@ export default function App() {
         seededEnglishCount = englishBanks.length
         nextBanks = [...nextBanks.filter(bank => !bank.id.startsWith('english-')), ...structuredClone(englishBanks)]
       }
-      const storedStatuses = userData?.statuses || manifest?.statuses
-      const nextStatuses = storedStatuses ? migrateZhangyuStatuses(validateStatuses(storedStatuses)) : statuses
-      const nextActivities = userData?.activities ? migrateZhangyuActivities(validateStudyActivities(userData.activities)) : activities
       const nextSettings = userData?.settings ? validateUserSettings(userData.settings) : userSettings
+      const hasStoredUserData = Boolean(userData || manifest?.statuses)
+      const nextRounds = hasStoredUserData
+        ? migrateStudyRounds(userData?.rounds, userData?.statuses || manifest?.statuses, userData?.activities)
+        : currentStudyRounds()
+      const nextRound = getStudyRound(nextRounds, nextSettings.activeRound)
+      const nextStatuses = nextRound.statuses
+      const nextActivities = nextRound.activities
       const images = await scanWorkspaceImages(handle, Object.values(manifest?.folders || {}))
       const folders = { ...(manifest?.folders || {}) }
       for (const folderName of new Set(images.map(item => item.bankFolder).filter(Boolean))) {
@@ -546,7 +596,7 @@ export default function App() {
         }
       }
       workspaceReady.current = false
-      setBanks(result.banks); setStatuses(nextStatuses); setActivities(nextActivities); setUserSettings(nextSettings); setWorkspaceFolders(folders); setWorkspaceHandle(handle); setDefaultWorkspaceConnected(false)
+      setBanks(result.banks); setStudyRounds(nextRounds); setStatuses(nextStatuses); setActivities(nextActivities); setUserSettings(nextSettings); setWorkspaceFolders(folders); setWorkspaceHandle(handle); setDefaultWorkspaceConnected(false)
       setWorkspaceState('connected')
       window.setTimeout(() => {
         workspaceReady.current = true
@@ -586,7 +636,7 @@ export default function App() {
   async function switchWorkspace() {
     try {
       if (workspaceHandle && workspaceState === 'connected') {
-        void Promise.all([writeWorkspaceManifest(workspaceHandle, banks, workspaceFolders), writeWorkspaceUserData(workspaceHandle, statuses, activities, userSettings)]).catch(() => {})
+        void Promise.all([writeWorkspaceManifest(workspaceHandle, banks, workspaceFolders), writeWorkspaceUserData(workspaceHandle, currentStudyRounds(), userSettings)]).catch(() => {})
       }
       const handle = await chooseWorkspace()
       await loadWorkspace(handle)
@@ -647,8 +697,9 @@ export default function App() {
         <input ref={node => { imageImportRef.current = node; node?.setAttribute('webkitdirectory', '') }} hidden type="file" multiple accept="image/*" onChange={e => importImages(e.target.files)}/>
         <div className="header-sync-status" title={workspaceState === 'connected' ? `已同步：${defaultWorkspaceConnected ? '默认题库' : workspaceHandle?.name}` : '数据与位置保存在本地'}><span className={`source-dot ${workspaceState === 'connected' ? 'workspace-on' : ''}`}/><span>{workspaceState === 'connected' ? '已同步' : workspaceState === 'syncing' ? '同步中' : '本地保存'}</span></div>
         <div className="settings-tools-module" ref={settingsToolsRef}>
-          <button className={settingsToolsOpen ? 'tool-button settings-tools-trigger active' : 'tool-button settings-tools-trigger'} aria-haspopup="menu" aria-expanded={settingsToolsOpen} onClick={() => setSettingsToolsOpen(open => !open)}><SettingsIcon/><span>设置</span><ChevronDown/></button>
+          <button className={settingsToolsOpen ? 'tool-button settings-tools-trigger active' : 'tool-button settings-tools-trigger'} aria-label="设置" aria-haspopup="menu" aria-expanded={settingsToolsOpen} onClick={() => setSettingsToolsOpen(open => !open)}><SettingsIcon/><span>设置</span><ChevronDown/></button>
           {settingsToolsOpen && <div className="settings-tools-popover" role="menu"><div className="settings-tools-heading"><div><strong>设置与数据</strong><small>题库连接、素材、导出和个人数据统一管理</small></div><button aria-label="关闭设置" onClick={() => setSettingsToolsOpen(false)}><X/></button></div>
+            <section className="round-settings-section"><span>学习轮次</span><div><label><RotateCcw/><span><strong>当前轮次</strong><small>每轮标记与统计相互独立</small></span><select aria-label="当前学习轮次" value={userSettings.activeRound} onChange={event => switchStudyRound(Number(event.target.value))}>{Array.from({ length: userSettings.roundCount }, (_, index) => index + 1).map(round => <option key={round} value={round}>第 {round} 轮 · {countMarkedQuestions(displayedStudyRound(round))} 道已标记</option>)}</select></label><button type="button" onClick={addStudyRound} disabled={userSettings.roundCount >= 99}><Plus/>新增一轮</button></div><small>现有记录已归入第 1 轮；默认预设 5 轮，切换或新增不会覆盖其他轮次。</small></section>
             <section className="countdown-settings-section"><span>考试倒计时</span><div><label><CalendarDays/><span><strong>考试日期</strong><small>修改后倒计时会立即更新</small></span><input aria-label="考试日期" type="date" min={formatExamDateValue(countdownNow)} value={formatExamDateValue(examCountdown.target)} onInput={event => updateExamDate(event.currentTarget.value)}/></label><button type="button" onClick={resetExamDate} disabled={!customExamDate}>恢复默认</button></div><small>日期保存在独立的用户数据中，可随备份和工作区同步，不会写入题库。</small></section>
             <section><span>题库连接</span><div><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); connectWorkspace() }}><FolderSync/><span><strong>{workspaceState === 'connected' ? '重新同步题库' : '连接题库文件夹'}</strong><small>{workspaceState === 'connected' ? '重新读取当前题库与用户数据' : '连接本地目录并启用实时保存'}</small></span></button><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); switchWorkspace() }}><FolderOpen/><span><strong>切换题库文件夹</strong><small>选择另一套本地题库目录</small></span></button></div></section>
             <section><span>导入与素材</span><div><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); importRef.current?.click() }}><FileUp/><span><strong>导入题库</strong><small>载入 JSON 题库或完整备份</small></span></button><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); imageImportRef.current?.click() }}><FileImage/><span><strong>导入图片</strong><small>按命名规则匹配题图与解析图</small></span></button></div></section>
