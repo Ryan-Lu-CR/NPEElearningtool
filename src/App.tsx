@@ -616,7 +616,7 @@ export default function App() {
         <div className="aside-mobile-title"><strong>题库导航</strong><button onClick={() => setSidebar(false)}><X/></button></div>
         <p className="eyebrow">题库类型</p>
         <div className="bank-select-row"><span className="bank-select-icon"><BookOpen size={17}/></span><select aria-label="选择题库" value={bank.id} onChange={event => { const selected = banks.find(item => item.id === event.target.value); if (selected) selectBank(selected) }}>{subjectBanks.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="rename-button" aria-label={`重命名题库 ${bank.name}`} onClick={() => openRename('bank', bank.id, bank.name)}><Pencil size={13}/></button></div>
-        <div className="selected-bank-meta">{bank.description || (bank.source === 'local' ? '本地题库' : '远程题库')} · {bank.chapters.length} 章</div>
+        <div className="selected-bank-meta">{protectedBankIds.has(bank.id) ? '默认题库' : bank.source === 'local' ? '自建题库' : '远程题库'} · {bank.chapters.length} 章 · {bankQuestionEntries.length} 道题</div>
         <button className="new-bank-button" onClick={() => setNewBankOpen(true)}><Plus size={16}/>新建题库</button>
         <button className={view === 'wrong' ? 'wrong-book active' : 'wrong-book'} onClick={showWrongBook}><AlertCircle size={17}/><span><strong>本题库错题本</strong><small>当前题库中的错题</small></span><em>{counts.wrong}</em></button>
         <div className="divider"/>
