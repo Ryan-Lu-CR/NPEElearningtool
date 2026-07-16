@@ -1,7 +1,7 @@
 {
   "name": "npee-study-space",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "scripts": {
     "start": "node scripts/dev-control.mjs",

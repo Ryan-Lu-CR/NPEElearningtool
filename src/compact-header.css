@@ -381,6 +381,9 @@
 .round-settings-section > div > button:disabled { color: #aaa29a; cursor: default; }
 .countdown-settings-section > small,
 .round-settings-section > small { display: block; margin: 7px 3px 0; color: #a09890; font-size: 8px; line-height: 1.5; }
+.settings-tools-popover .stats-settings-section > div { display: grid; grid-template-columns: 1fr; gap: 3px; padding: 10px 12px; border: 1px solid #e8e0d8; border-radius: 9px; background: #faf8f5; }
+.stats-settings-section strong { color: #5a534d; font-size: 10px; }
+.stats-settings-section small { color: #958d85; font-size: 8px; line-height: 1.6; }
 
 .settings-tools-popover section button[role='menuitem'] strong {
   font-size: 11px;
