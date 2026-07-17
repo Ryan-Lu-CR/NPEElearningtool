@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { getAssetBlobs, getAssetRevision, subscribeAssetChanges } from './assets'
 
-interface Props { keys?: string[]; urls?: string[]; alt: string; className?: string; trackExportLoading?: boolean }
+interface Props { keys?: string[]; urls?: string[]; alt: string; className?: string; trackExportLoading?: boolean; eager?: boolean }
 
 // Default-workspace files are served with long-lived immutable caching. Keep a
 // small explicit version on direct image URLs so regenerated crops cannot be
@@ -13,7 +13,7 @@ function versionDefaultWorkspaceUrl(source: string) {
   return `${source}${source.includes('?') ? '&' : '?'}assetVersion=${DEFAULT_WORKSPACE_ASSET_VERSION}`
 }
 
-export default function AssetGallery({ keys = [], urls = [], alt, className, trackExportLoading = false }: Props) {
+export default function AssetGallery({ keys = [], urls = [], alt, className, trackExportLoading = false, eager = false }: Props) {
   const [localUrls, setLocalUrls] = useState<string[]>([])
   const keySignature = keys.join('\u0000')
   const urlSignature = urls.join('\u0000')
@@ -41,5 +41,5 @@ export default function AssetGallery({ keys = [], urls = [], alt, className, tra
   const sources = [...urls.filter(Boolean).map(versionDefaultWorkspaceUrl), ...(loadState.signature === assetSignature ? localUrls : [])]
   const exportState = loadState.signature === assetSignature ? loadState.status : keys.length ? 'loading' : 'ready'
   if (!sources.length && !trackExportLoading) return null
-  return <div className={className || 'asset-gallery'} data-export-asset-state={trackExportLoading ? exportState : undefined}>{sources.map((source, index) => <img key={`${source}-${index}`} src={source} alt={`${alt}${sources.length > 1 ? ` ${index + 1}` : ''}`} loading={trackExportLoading ? 'eager' : 'lazy'}/>)}</div>
+  return <div className={className || 'asset-gallery'} data-export-asset-state={trackExportLoading ? exportState : undefined}>{sources.map((source, index) => <img key={`${source}-${index}`} src={source} alt={`${alt}${sources.length > 1 ? ` ${index + 1}` : ''}`} loading={trackExportLoading || eager ? 'eager' : 'lazy'}/>)}</div>
 }

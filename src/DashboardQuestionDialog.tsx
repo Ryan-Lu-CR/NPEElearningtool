@@ -97,7 +97,7 @@ export default function DashboardQuestionDialog({ bankName, chapterName, section
           <div className={usesImageAnswer ? 'answer-analysis combined-image-answer' : 'answer-analysis'}>
             <span>{usesImageAnswer ? '参考答案和解析' : '解析'}</span>
             {hasAnswerImages
-              ? <AssetGallery keys={question.answerImageKeys} urls={question.answerImageUrl ? [question.answerImageUrl] : []} alt={usesImageAnswer ? '参考答案和解析' : '解析截图'}/>
+              ? <AssetGallery keys={question.answerImageKeys} urls={question.answerImageUrl ? [question.answerImageUrl] : []} alt={usesImageAnswer ? '参考答案和解析' : '解析截图'} eager/>
               : question.analysis ? <p>{question.analysis}</p> : <p className="analysis-missing">暂未收录解析</p>}
           </div>
           {question.videoUrl && <a href={question.videoUrl} target="_blank" rel="noreferrer">观看视频解析 →</a>}
