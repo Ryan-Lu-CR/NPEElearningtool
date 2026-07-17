@@ -64,3 +64,4 @@ header{gap:20px}.brand{flex:0 0 260px}.header-center{white-space:nowrap}.header-
 
 /* A single chapter wrapper adds no useful hierarchy; show its sections directly. */
 .chapter.single-chapter .section{padding-left:14px}
+.english-section-group{display:grid;gap:1px}.english-section-group+.english-section-group{margin-top:6px;padding-top:7px;border-top:1px solid #eee8e1}.english-section-group-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;margin:0 4px;padding:4px 5px;color:#9b938a;font-size:10px;font-weight:600}.english-section-group-heading span{line-height:1.4}.english-section-group-heading small{color:#aaa199;font-size:9px;font-variant-numeric:tabular-nums;white-space:nowrap}.english-section-group .section,.chapter.single-chapter .english-section-group .section{padding-left:22px}

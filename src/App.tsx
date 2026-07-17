@@ -25,6 +25,7 @@ import { countMarkedQuestions, emptyStudyRound, getStudyRound, loadStudyRounds, 
 import QuestionNotePanel from './QuestionNotePanel'
 import { hasQuestionNote, loadQuestionNotes, saveQuestionNotes, validateQuestionNotes, type QuestionNote, type QuestionNotes } from './questionNotes'
 import { bankSubject, subjectLabels } from './subjects'
+import { englishSectionLabel, groupEnglishSections, type EnglishSectionGroupKey } from './englishNavigation'
 
 const statusMeta: Record<QuestionStatus, { label: string; icon: string }> = {
   none: { label: '未标记', icon: '○' }, proficient: { label: '熟练', icon: '✓' }, vague: { label: '模糊', icon: '?' }, wrong: { label: '错误', icon: '×' }
@@ -52,6 +53,7 @@ function navigationProgress(questions: Question[], statuses: Record<string, Ques
 }
 
 type BankQuestionEntry = ReturnType<typeof orderedQuestionEntriesForBank>[number]
+type SidebarSectionGroup = { key: EnglishSectionGroupKey | 'all'; label: string; sections: Section[] }
 const protectedBankIds = new Set<string>(defaultBankIds)
 
 export default function App() {
@@ -798,11 +800,21 @@ export default function App() {
         <p className="eyebrow">章节导航</p>
         <div className="chapter-scroll"><div className="chapter-tree">{bank.chapters.map(chapter => {
           const chapterProgress = navigationProgress(chapter.sections.flatMap(sectionItem => sectionItem.questions), statuses, binaryFilterMode)
+          const sectionGroups: SidebarSectionGroup[] = bank.id === 'english-exams'
+            ? groupEnglishSections(chapter.sections)
+            : [{ key: 'all', label: '', sections: chapter.sections }]
           return <div className={bank.chapters.length === 1 ? 'chapter single-chapter' : 'chapter'} key={chapter.id}>
-            {bank.chapters.length > 1 && <div className="chapter-title"><button className="chapter-toggle" aria-expanded={expandedChapterIds.has(chapter.id)} onClick={() => toggleChapter(chapter.id)}>{expandedChapterIds.has(chapter.id) ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}<span>{chapter.name}</span><em>{chapter.sections.length}</em><small className="nav-progress" title={`已标记 ${chapterProgress.marked}/${chapterProgress.total} 题`}>{chapterProgress.label}</small></button><button className="rename-button" aria-label={`重命名章节 ${chapter.name}`} onClick={() => openRename('chapter', chapter.id, chapter.name)}><Pencil size={12}/></button></div>}
-            {(bank.chapters.length === 1 || expandedChapterIds.has(chapter.id)) && chapter.sections.map(s => {
-              const sectionProgress = navigationProgress(s.questions, statuses, binaryFilterMode)
-              return <button key={s.id} onClick={() => selectSection(s.id)} className={view === 'section' && s.id === sectionId ? 'section active' : 'section'}><span>{s.name}</span><small className="nav-progress" title={`已标记 ${sectionProgress.marked}/${sectionProgress.total} 题`}>{sectionProgress.label}</small></button>
+            {bank.chapters.length > 1 && <div className="chapter-title"><button className="chapter-toggle" aria-expanded={expandedChapterIds.has(chapter.id)} onClick={() => toggleChapter(chapter.id)}>{expandedChapterIds.has(chapter.id) ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}<span>{chapter.name}</span><em>{sectionGroups.length}</em><small className="nav-progress" title={`已标记 ${chapterProgress.marked}/${chapterProgress.total} 题`}>{chapterProgress.label}</small></button><button className="rename-button" aria-label={`重命名章节 ${chapter.name}`} onClick={() => openRename('chapter', chapter.id, chapter.name)}><Pencil size={12}/></button></div>}
+            {(bank.chapters.length === 1 || expandedChapterIds.has(chapter.id)) && sectionGroups.map(group => {
+              const groupProgress = navigationProgress(group.sections.flatMap(sectionItem => sectionItem.questions), statuses, binaryFilterMode)
+              return <div key={`${chapter.id}-${group.key}`} className={group.label ? 'english-section-group' : undefined}>
+                {group.label && <div className="english-section-group-heading"><span>{group.label}</span><small title={`已标记 ${groupProgress.marked}/${groupProgress.total} 题`}>{groupProgress.label}</small></div>}
+                {group.sections.map(s => {
+                  const sectionProgress = navigationProgress(s.questions, statuses, binaryFilterMode)
+                  const label = group.key === 'all' ? s.name : englishSectionLabel(s, group.key)
+                  return <button key={s.id} onClick={() => selectSection(s.id)} className={view === 'section' && s.id === sectionId ? 'section active' : 'section'}><span>{label}</span><small className="nav-progress" title={`已标记 ${sectionProgress.marked}/${sectionProgress.total} 题`}>{sectionProgress.label}</small></button>
+                })}
+              </div>
             })}
           </div>
         })}{bank.chapters.length === 0 && <div className="empty-chapters">还没有章节<br/><small>点击顶部“图片”批量导入</small></div>}</div></div>
