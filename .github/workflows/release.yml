@@ -1,0 +1,44 @@
+name: 发布完整下载包
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: 生成一键启动完整包
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出正式版源码与题库
+        uses: actions/checkout@v6
+
+      - name: 组装发布包
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          package_root="NPEE-Study-Space-v${version}"
+          archive="${package_root}-Full.zip"
+          mkdir -p "release/${package_root}"
+          rsync -a ./ "release/${package_root}/" \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude '.pnpm-store/' \
+            --exclude 'node_modules/' \
+            --exclude 'dist/' \
+            --exclude '用户数据/' \
+            --exclude '.DS_Store' \
+            --exclude 'release/'
+          cd release
+          zip -1 -q -r "../${archive}" "${package_root}"
+          cd ..
+          sha256sum "${archive}" > "${archive}.sha256"
+          printf 'RELEASE_ARCHIVE=%s\n' "${archive}" >> "$GITHUB_ENV"
+
+      - name: 上传到 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "$RELEASE_ARCHIVE" "$RELEASE_ARCHIVE.sha256" --clobber

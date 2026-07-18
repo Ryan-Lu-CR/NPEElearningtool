@@ -208,6 +208,42 @@
   margin-right: 6px;
 }
 
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #e4ddd5;
+  border-radius: 9px;
+  background: #fff;
+  color: #5e5851;
+  flex: 0 0 34px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .16s, border-color .16s, color .16s, transform .16s;
+}
+
+.github-link:hover {
+  border-color: #cdb5b0;
+  background: #faf3f1;
+  color: #8f3028;
+  transform: translateY(-1px);
+}
+
+.github-link:focus-visible {
+  outline: 2px solid #9f2e25;
+  outline-offset: 2px;
+}
+
+.github-link svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  stroke-width: 1.9;
+}
+
 .settings-tools-trigger {
   height: 40px;
   padding: 0 13px;
