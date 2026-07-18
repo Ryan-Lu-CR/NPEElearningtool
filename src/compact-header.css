@@ -8,8 +8,11 @@
   }
 
   .page-head > div:first-child {
-    display: grid;
-    grid-template-columns: max-content max-content;
+    display: block;
+  }
+
+  .page-head-title-row {
+    display: flex;
     column-gap: 13px;
     align-items: baseline;
   }
@@ -51,6 +54,10 @@
   }
 
   .page-head > div:first-child {
+    display: block;
+  }
+
+  .page-head-title-row {
     display: block;
   }
 

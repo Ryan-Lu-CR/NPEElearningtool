@@ -826,7 +826,7 @@ export default function App() {
 
       <main className={activePage === 'profile' ? 'profile-main' : ''}>
         {activePage === 'profile' ? <LearningDashboard banks={banks} statuses={statuses} activities={activities} notes={questionNotes} selectedBankId={profileBankId} onSelectedBankIdChange={setProfileBankId} onQuestionStatusChange={markDashboardQuestion} onQuestionReviewStatusChange={markDashboardReview} onQuestionNoteChange={updateQuestionNote}/> : <>
-        <div className="page-head"><div><span className="breadcrumb">{bank.name} <ChevronRight size={13}/>{view === 'section' && currentChapter && <>{currentChapter.name} <ChevronRight size={13}/></>}{view === 'wrong' ? '本题库不熟练题' : section?.name || '未选择'}</span><h1>{view === 'wrong' ? '本题库不熟练题' : section?.name || '请选择具体节题目'}</h1><p>{view === 'wrong' ? `按章节和小节分组 · 共 ${reviewQuestions.length} 道不熟练题` : section ? `共 ${section.questions.length} 道题` : '从左侧选择一个章节开始学习'}</p></div>
+        <div className="page-head"><div><span className="breadcrumb">{bank.name} <ChevronRight size={13}/>{view === 'section' && currentChapter && <>{currentChapter.name} <ChevronRight size={13}/></>}{view === 'wrong' ? '本题库不熟练题' : section?.name || '未选择'}</span><div className="page-head-title-row"><h1>{view === 'wrong' ? '本题库不熟练题' : section?.name || '请选择具体节题目'}</h1><p>{view === 'wrong' ? `按章节和小节分组 · 共 ${reviewQuestions.length} 道不熟练题` : section ? `共 ${section.questions.length} 道题` : '从左侧选择一个章节开始学习'}</p></div></div>
           <div className="search"><Search size={17}/><input value={query} onChange={e => { setQuery(e.target.value); setQuestionIndex(0) }} placeholder={view === 'wrong' ? '搜索不熟练题' : '搜索当前小节'}/></div>
         </div>
 
