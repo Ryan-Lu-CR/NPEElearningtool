@@ -264,6 +264,50 @@
   touch-action: none;
 }
 
+.handwriting-canvas svg:focus {
+  outline: none;
+}
+
+.handwriting-lasso-preview {
+  pointer-events: none;
+}
+
+.handwriting-selection-overlay {
+  pointer-events: none;
+}
+
+.handwriting-selection-box {
+  fill: rgba(143, 48, 40, .055);
+  stroke: #a65349;
+  stroke-width: 2;
+  stroke-dasharray: 8 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.handwriting-selection-hitbox {
+  fill: transparent;
+  pointer-events: all;
+  cursor: move;
+}
+
+.handwriting-selection-handle {
+  fill: #fff;
+  stroke: #8f3028;
+  stroke-width: 2;
+  pointer-events: all;
+  vector-effect: non-scaling-stroke;
+}
+
+.handwriting-selection-handle-nw,
+.handwriting-selection-handle-se {
+  cursor: nwse-resize;
+}
+
+.handwriting-selection-handle-ne,
+.handwriting-selection-handle-sw {
+  cursor: nesw-resize;
+}
+
 .handwriting-canvas > span {
   position: absolute;
   top: 50%;
