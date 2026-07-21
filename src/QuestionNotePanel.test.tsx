@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import QuestionNotePanel, { pathsForStroke } from './QuestionNotePanel'
+import QuestionNotePanel, { canvasHeightForDrawing, canvasHeightForStrokes, insertSpaceIntoStrokes, pathsForStroke } from './QuestionNotePanel'
 
 describe('QuestionNotePanel', () => {
   it('uses an answer-style disclosure and marks saved content', () => {
@@ -47,5 +47,29 @@ describe('QuestionNotePanel', () => {
 
     expect(lightPaths.some(path => path.d.includes(' Q '))).toBe(true)
     expect(Math.max(...heavyPaths.map(path => path.width))).toBeGreaterThan(Math.max(...lightPaths.map(path => path.width)))
+  })
+
+  it('keeps the canvas tall enough for extended handwriting', () => {
+    expect(canvasHeightForDrawing({
+      version: 1,
+      aspectRatio: 5 / 3,
+      strokes: [{ id: 'lower', color: '#8f3028', size: 2, input: 'pen', points: [{ x: .2, y: 1.4 }] }],
+    })).toBeGreaterThan(600 * 1.4)
+  })
+
+  it('shrinks to the remaining strokes without going below the default height', () => {
+    expect(canvasHeightForStrokes([])).toBe(600)
+    expect(canvasHeightForStrokes([{ id: 'upper', color: '#000000', size: 2, input: 'pen', points: [{ x: .2, y: .4 }] }])).toBe(600)
+    expect(canvasHeightForStrokes([{ id: 'lower', color: '#000000', size: 2, input: 'pen', points: [{ x: .2, y: 1.4 }] }])).toBeGreaterThan(600 * 1.4)
+  })
+
+  it('inserts space by moving only strokes below the insertion line', () => {
+    const strokes = [
+      { id: 'above', color: '#000000', size: 2, input: 'pen' as const, points: [{ x: .2, y: .2 }] },
+      { id: 'below', color: '#000000', size: 2, input: 'pen' as const, points: [{ x: .2, y: .8 }] },
+    ]
+    const result = insertSpaceIntoStrokes(strokes, .5, .25)
+    expect(result[0].points[0].y).toBe(.2)
+    expect(result[1].points[0].y).toBe(1.05)
   })
 })

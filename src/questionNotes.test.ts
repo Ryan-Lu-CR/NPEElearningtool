@@ -18,7 +18,7 @@ describe('questionNotes', () => {
     expect(notes.q1.drawing).toEqual({
       version: 1,
       aspectRatio: 2,
-      strokes: [{ id: 's1', color: '#aabbcc', size: 4, input: 'pen', points: [{ x: 0, y: .5, pressure: 1 }, { x: .8, y: 1 }] }],
+      strokes: [{ id: 's1', color: '#aabbcc', size: 4, input: 'pen', points: [{ x: 0, y: .5, pressure: 1 }, { x: .8, y: 1.5 }] }],
     })
   })
 

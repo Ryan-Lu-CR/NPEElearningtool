@@ -8,9 +8,9 @@
 
 当前默认内置 **17 个题库、6536 道题**。英语真题按“年份 → 题型”组织，数学和专业课图片题按“章节 → 小节 → 题号”组织；题库内容与个人学习记录分开存储，更新题库不会覆盖熟练度和复习历史。
 
-> 当前正式版：**v0.3.2** · 本地优先 · 无需注册 · 支持 macOS / Windows · 推荐 Chrome / Edge
+> 当前正式版：**v0.3.3** · 本地优先 · 无需注册 · 支持 macOS / Windows · 推荐 Chrome / Edge
 
-[**下载 v0.3.2 完整包**](https://github.com/EnderRayven/NPEElearningtool/releases/download/v0.3.2/NPEE-Study-Space-v0.3.2-Full.zip) · [查看全部版本](https://github.com/EnderRayven/NPEElearningtool/releases) · [反馈问题](https://github.com/EnderRayven/NPEElearningtool/issues)
+[**下载 v0.3.3 完整包**](https://github.com/EnderRayven/NPEElearningtool/releases/download/v0.3.3/NPEE-Study-Space-v0.3.3-Full.zip) · [查看全部版本](https://github.com/EnderRayven/NPEElearningtool/releases) · [反馈问题](https://github.com/EnderRayven/NPEElearningtool/issues)
 
 完整包已包含应用、内置题库与 macOS/Windows 一键启动脚本。下载后解压，无需安装 Git 或克隆仓库。
 
@@ -18,7 +18,7 @@
 
 - [界面预览](#界面预览)：查看学习、看板和复习界面
 - [下载与启动](#下载与启动)：下载完整包并一键启动
-- [v0.3.2 新内容](#v032-数学真题与笔记体验更新)：查看本次正式版重点更新
+- [v0.3.3 新内容](#v033-手写画布与滚动体验优化)：查看本次正式版重点更新
 - [典型学习流程](#典型学习流程)：从选题库到多轮复习
 - [核心功能](#核心功能)：完整能力总览
 - [默认题库](#默认题库)：内置题库及题目数量
@@ -33,6 +33,12 @@
 - **错题复盘：** 将模糊、错误题集中到复盘入口，掌握后自动退出当前错题列表。
 - **长期进度跟踪：** 用日历查看每天做题量、正确率和待复盘数量，用多轮数据区分一刷、二刷。
 - **离线与隐私优先：** 不需要账号或云数据库，适合保存个人购买资料和学习记录。
+
+## v0.3.3 手写画布与滚动体验优化
+
+- **手写画布更稳定：** 修复缩放、移动时的坐标偏移，支持插入空间、自动延长和自动收缩画布。
+- **笔迹调节更直观：** 粗细滑块改为点击后弹出，并实时显示当前笔迹大小。
+- **页面滚动更一致：** 预留滚动条空间，统一导航、弹窗和页面滚动条样式，减少布局跳动。
 
 ## v0.3.2 数学真题与笔记体验更新
 

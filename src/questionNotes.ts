@@ -33,6 +33,11 @@ const STORE_NAME = 'notes'
 const NOTES_KEY = 'all'
 const FALLBACK_KEY = 'npee:question-notes:v1'
 const DEFAULT_ASPECT_RATIO = 5 / 3
+export const DRAWING_WIDTH = 1000
+export const DRAWING_BASE_HEIGHT = 600
+export const MAX_DRAWING_HEIGHT_MULTIPLIER = 32
+export const MAX_DRAWING_HEIGHT = DRAWING_BASE_HEIGHT * MAX_DRAWING_HEIGHT_MULTIPLIER
+export const MIN_DRAWING_ASPECT_RATIO = DRAWING_WIDTH / MAX_DRAWING_HEIGHT
 const MAX_TEXT_LENGTH = 100_000
 const MAX_STROKES = 2_000
 const MAX_POINTS_PER_STROKE = 20_000
@@ -55,7 +60,7 @@ function validatePoint(value: unknown): HandwritingPoint | null {
   const y = finiteNumber(value.y, Number.NaN)
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null
   const pressure = value.pressure === undefined ? undefined : clamp(finiteNumber(value.pressure, .5), 0, 1)
-  return { x: clamp(x, 0, 1), y: clamp(y, 0, 1), ...(pressure === undefined ? {} : { pressure }) }
+  return { x: clamp(x, 0, 1), y: clamp(y, 0, MAX_DRAWING_HEIGHT_MULTIPLIER), ...(pressure === undefined ? {} : { pressure }) }
 }
 
 function validateStroke(value: unknown, index: number): HandwritingStroke | null {
@@ -76,7 +81,7 @@ export function validateHandwritingDrawing(value: unknown): HandwritingDrawing {
     : []
   return {
     version: 1,
-    aspectRatio: clamp(finiteNumber(value.aspectRatio, DEFAULT_ASPECT_RATIO), .5, 3),
+    aspectRatio: clamp(finiteNumber(value.aspectRatio, DEFAULT_ASPECT_RATIO), MIN_DRAWING_ASPECT_RATIO, 3),
     strokes,
   }
 }

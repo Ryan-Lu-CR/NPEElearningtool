@@ -1,0 +1,113 @@
+/* Keep the page width stable when content changes from short to scrollable. */
+html {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #c5b9af #f3efe9;
+}
+
+html::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+html::-webkit-scrollbar-track {
+  background: #f3efe9;
+  border-left: 1px solid #e7e0d8;
+}
+
+html::-webkit-scrollbar-thumb {
+  min-height: 42px;
+  border: 3px solid #f3efe9;
+  border-radius: 999px;
+  background: #c5b9af;
+}
+
+html::-webkit-scrollbar-thumb:hover {
+  background: #a9978c;
+}
+
+html::-webkit-scrollbar-corner {
+  background: #f3efe9;
+}
+
+:is(
+  .chapter-scroll,
+  .study-layout > .question-nav,
+  .passage-question-nav,
+  .review-nav-groups,
+  .keypoint-number-nav,
+  .dashboard-question-dialog-scroll,
+  .dashboard-question-review,
+  .settings-tools-popover,
+  .export-dialog,
+  .settings-dialog
+) {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #c5b9af transparent;
+}
+
+:is(
+  .chapter-scroll,
+  .study-layout > .question-nav,
+  .passage-question-nav,
+  .review-nav-groups,
+  .keypoint-number-nav,
+  .dashboard-question-dialog-scroll,
+  .dashboard-question-review,
+  .settings-tools-popover,
+  .export-dialog,
+  .settings-dialog
+)::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+:is(
+  .chapter-scroll,
+  .study-layout > .question-nav,
+  .passage-question-nav,
+  .review-nav-groups,
+  .keypoint-number-nav,
+  .dashboard-question-dialog-scroll,
+  .dashboard-question-review,
+  .settings-tools-popover,
+  .export-dialog,
+  .settings-dialog
+)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:is(
+  .chapter-scroll,
+  .study-layout > .question-nav,
+  .passage-question-nav,
+  .review-nav-groups,
+  .keypoint-number-nav,
+  .dashboard-question-dialog-scroll,
+  .dashboard-question-review,
+  .settings-tools-popover,
+  .export-dialog,
+  .settings-dialog
+)::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #c5b9af;
+  background-clip: padding-box;
+}
+
+:is(
+  .chapter-scroll,
+  .study-layout > .question-nav,
+  .passage-question-nav,
+  .review-nav-groups,
+  .keypoint-number-nav,
+  .dashboard-question-dialog-scroll,
+  .dashboard-question-review,
+  .settings-tools-popover,
+  .export-dialog,
+  .settings-dialog
+)::-webkit-scrollbar-thumb:hover {
+  background: #a9978c;
+  background-clip: padding-box;
+}
