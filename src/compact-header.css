@@ -251,6 +251,7 @@
   cursor: wait;
 }
 
+.fullscreen-toggle,
 .github-link {
   display: inline-flex;
   align-items: center;
@@ -268,6 +269,7 @@
   transition: background .16s, border-color .16s, color .16s, transform .16s;
 }
 
+.fullscreen-toggle:hover,
 .github-link:hover {
   border-color: #cdb5b0;
   background: #faf3f1;
@@ -275,11 +277,13 @@
   transform: translateY(-1px);
 }
 
+.fullscreen-toggle:focus-visible,
 .github-link:focus-visible {
   outline: 2px solid #9f2e25;
   outline-offset: 2px;
 }
 
+.fullscreen-toggle svg,
 .github-link svg {
   width: 15px;
   height: 15px;
@@ -524,4 +528,44 @@
 
 .settings-tools-popover .bank-settings-section button[role='menuitem']:first-child small {
   color: #f7deda;
+}
+
+/* Keep the study controls in the heading row on wide screens. */
+@media screen and (min-width: 1051px) {
+  .page-head-tools {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+  }
+
+  .page-head-tools .filter-row {
+    max-width: none;
+    margin: 0;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .page-head-tools .search {
+    flex: 0 0 220px;
+  }
+}
+
+@media screen and (max-width: 1050px) {
+  .page-head-tools {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-head-tools .search {
+    order: -1;
+  }
+}
+
+@media screen and (max-width: 580px) {
+  .page-head-tools .filter-row {
+    margin-top: 10px;
+    margin-bottom: 12px;
+  }
 }

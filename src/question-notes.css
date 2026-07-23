@@ -438,11 +438,71 @@
   transform: translate(-50%, -50%);
 }
 
-.handwriting-space-preview {
+.handwriting-space-boundaries {
+  fill: none;
   stroke: #a65349;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
+}
+
+.handwriting-space-range {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  overflow: visible;
+  border-top: 1px dashed #a65349;
+  border-bottom: 1px dashed #a65349;
+  background: rgba(166, 83, 73, .12);
+  color: #8f3028;
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.handwriting-space-range::before,
+.handwriting-space-range::after {
+  position: absolute;
+  left: 50%;
+  width: 22px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-left: 1px solid currentColor;
+  content: '';
+  transform: translateX(-50%);
+}
+
+.handwriting-space-range::before {
+  top: -3px;
+}
+
+.handwriting-space-range::after {
+  bottom: -3px;
+}
+
+.handwriting-space-range span {
+  max-width: calc(100% - 24px);
+  padding: 3px 9px;
+  border: 1px solid rgba(166, 83, 73, .3);
+  border-radius: 999px;
+  background: rgba(255, 253, 249, .94);
+  box-shadow: 0 2px 7px rgba(91, 48, 39, .08);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.handwriting-space-range.shrinking {
+  border-color: #687da4;
+  background: rgba(89, 111, 155, .12);
+  color: #4c6491;
+}
+
+.handwriting-space-range.shrinking span {
+  border-color: rgba(89, 111, 155, .3);
 }
 
 .handwriting-expand {

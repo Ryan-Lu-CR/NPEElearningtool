@@ -2,7 +2,7 @@
 html {
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: #c5b9af #f3efe9;
+  scrollbar-color: #d8cec7 #faf8f5;
 }
 
 html::-webkit-scrollbar {
@@ -11,23 +11,42 @@ html::-webkit-scrollbar {
 }
 
 html::-webkit-scrollbar-track {
-  background: #f3efe9;
-  border-left: 1px solid #e7e0d8;
+  background: #faf8f5;
+  border-left: 1px solid #f1ebe6;
 }
 
 html::-webkit-scrollbar-thumb {
   min-height: 42px;
-  border: 3px solid #f3efe9;
+  border: 3px solid #faf8f5;
   border-radius: 999px;
-  background: #c5b9af;
+  background: #d8cec7;
 }
 
 html::-webkit-scrollbar-thumb:hover {
-  background: #a9978c;
+  background: #c7b9b0;
 }
 
 html::-webkit-scrollbar-corner {
-  background: #f3efe9;
+  background: #faf8f5;
+}
+
+/* The page scrollbar is hidden while a modal is open, so the reserved gutter does not become a bright strip. */
+html.dashboard-question-modal-open {
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
+}
+
+html.dashboard-question-modal-open::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+html.dashboard-question-modal-open::-webkit-scrollbar-track,
+html.dashboard-question-modal-open::-webkit-scrollbar-corner,
+html.dashboard-question-modal-open::-webkit-scrollbar-thumb {
+  border: 0;
+  background: transparent;
 }
 
 :is(
@@ -44,7 +63,7 @@ html::-webkit-scrollbar-corner {
 ) {
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: #c5b9af transparent;
+  scrollbar-color: #d8cec7 transparent;
 }
 
 :is(
@@ -92,7 +111,7 @@ html::-webkit-scrollbar-corner {
 )::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
-  background: #c5b9af;
+  background: #d8cec7;
   background-clip: padding-box;
 }
 
@@ -108,6 +127,6 @@ html::-webkit-scrollbar-corner {
   .export-dialog,
   .settings-dialog
 )::-webkit-scrollbar-thumb:hover {
-  background: #a9978c;
+  background: #c7b9b0;
   background-clip: padding-box;
 }

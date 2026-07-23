@@ -38,12 +38,19 @@ export type StudyActivityUpdate = Pick<StudyActivity, 'questionId' | 'bankId' | 
   & Partial<Pick<StudyActivity, 'chapterId' | 'sectionId' | 'questionNumber' | 'questionType' | 'readingType' | 'subject' | 'source' | 'answerRevealed'>>
   & { previousStatus?: QuestionStatus }
 
-export interface DailyActivityStats {
+export interface ActivityOutcomeStats {
   total: number
   proficient: number
   vague: number
   wrong: number
   accuracy: number | null
+}
+
+export interface DailyActivityStats extends ActivityOutcomeStats {
+  newQuestions: number
+  reviewQuestions: number
+  newStats: ActivityOutcomeStats
+  reviewStats: ActivityOutcomeStats
 }
 
 const readingTypes = new Set<ReadingQuestionType>(['detail', 'example', 'main-idea', 'attitude', 'inference', 'vocabulary'])
@@ -126,10 +133,44 @@ export function updateStudyActivity(
   return [...remaining, record]
 }
 
-export function calculateDailyActivity(activities: StudyActivity[]): DailyActivityStats {
-  const proficient = activities.filter(item => item.status === 'proficient').length
-  const vague = activities.filter(item => item.status === 'vague').length
-  const wrong = activities.filter(item => item.status === 'wrong').length
-  const total = proficient + vague + wrong
-  return { total, proficient, vague, wrong, accuracy: total ? proficient / total : null }
+function activityKey(activity: StudyActivity) {
+  return `${activity.bankId}\u0000${activity.questionId}`
+}
+
+function hasReviewOnDate(activity: StudyActivity, date: string) {
+  return activity.reviews?.some(review => localDateKey(new Date(review.reviewedAt)) === date) || false
+}
+
+export function calculateDailyActivity(activities: StudyActivity[], allActivities = activities): DailyActivityStats {
+  const summarize = (items: StudyActivity[]): ActivityOutcomeStats => {
+    const proficient = items.filter(item => item.status === 'proficient').length
+    const vague = items.filter(item => item.status === 'vague').length
+    const wrong = items.filter(item => item.status === 'wrong').length
+    const total = proficient + vague + wrong
+    return { total, proficient, vague, wrong, accuracy: total ? proficient / total : null }
+  }
+  const overallStats = summarize(activities)
+  const firstActivityDate = new Map<string, string>()
+  allActivities.filter(item => item.status !== 'none').forEach(item => {
+    const key = activityKey(item)
+    const previousDate = firstActivityDate.get(key)
+    if (!previousDate || item.date < previousDate) firstActivityDate.set(key, item.date)
+  })
+  const newActivities: StudyActivity[] = []
+  const reviewActivities: StudyActivity[] = []
+  activities.filter(item => item.status !== 'none').forEach(item => {
+    const key = activityKey(item)
+    const isNewQuestion = firstActivityDate.get(key) === item.date && !hasReviewOnDate(item, item.date)
+    if (isNewQuestion) newActivities.push(item)
+    else reviewActivities.push(item)
+  })
+  const newStats = summarize(newActivities)
+  const reviewStats = summarize(reviewActivities)
+  return {
+    ...overallStats,
+    newQuestions: newStats.total,
+    reviewQuestions: reviewStats.total,
+    newStats,
+    reviewStats,
+  }
 }

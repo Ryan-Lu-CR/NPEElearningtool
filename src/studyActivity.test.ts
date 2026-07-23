@@ -48,7 +48,40 @@ describe('study activity', () => {
       { date: '2026-07-14', questionId: 'q1', bankId: 'math', status: 'proficient', updatedAt: '' },
       { date: '2026-07-14', questionId: 'q2', bankId: 'math', status: 'vague', updatedAt: '' },
       { date: '2026-07-14', questionId: 'q3', bankId: 'math', status: 'wrong', updatedAt: '' },
-    ])).toEqual({ total: 3, proficient: 1, vague: 1, wrong: 1, accuracy: 1 / 3 })
+    ])).toEqual({
+      total: 3, proficient: 1, vague: 1, wrong: 1, accuracy: 1 / 3, newQuestions: 3, reviewQuestions: 0,
+      newStats: { total: 3, proficient: 1, vague: 1, wrong: 1, accuracy: 1 / 3 },
+      reviewStats: { total: 0, proficient: 0, vague: 0, wrong: 0, accuracy: null },
+    })
+  })
+
+  it('区分首次做题和后续复习', () => {
+    const allActivities = [
+      { date: '2026-07-13', questionId: 'q1', bankId: 'math', status: 'wrong' as const, updatedAt: '2026-07-13T02:00:00.000Z' },
+      { date: '2026-07-14', questionId: 'q1', bankId: 'math', status: 'proficient' as const, updatedAt: '2026-07-14T02:00:00.000Z' },
+      { date: '2026-07-14', questionId: 'q2', bankId: 'math', status: 'vague' as const, updatedAt: '2026-07-14T03:00:00.000Z' },
+    ]
+    expect(calculateDailyActivity(allActivities.slice(1), allActivities)).toMatchObject({
+      total: 2,
+      newQuestions: 1,
+      reviewQuestions: 1,
+      newStats: { total: 1, proficient: 0, vague: 1, wrong: 0, accuracy: 0 },
+      reviewStats: { total: 1, proficient: 1, vague: 0, wrong: 0, accuracy: 1 },
+    })
+  })
+
+  it('将当天明确记录的复习计入复习数', () => {
+    const activities = [{
+      date: '2026-07-14', questionId: 'q1', bankId: 'math', status: 'proficient' as const,
+      updatedAt: '2026-07-14T02:00:00.000Z',
+      reviews: [{ previousStatus: 'wrong' as const, status: 'proficient' as const, reviewedAt: '2026-07-14T03:00:00.000Z' }],
+    }]
+    expect(calculateDailyActivity(activities)).toMatchObject({
+      newQuestions: 0,
+      reviewQuestions: 1,
+      newStats: { total: 0, accuracy: null },
+      reviewStats: { total: 1, proficient: 1, accuracy: 1 },
+    })
   })
 
   it('过滤损坏的活动数据', () => {

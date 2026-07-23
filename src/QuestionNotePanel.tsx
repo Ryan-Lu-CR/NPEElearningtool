@@ -46,7 +46,7 @@ const midpoint = (left: HandwritingPoint, right: HandwritingPoint) => ({
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value))
 const AUTO_EXTEND_TRIGGER = 72
 const AUTO_EXTEND_STEP = 300
-const MIN_INSERT_SPACE = .12
+const MIN_SPACE_ADJUSTMENT = .04
 
 export const canvasHeightForStrokes = (strokes: HandwritingStroke[]) => {
   const highestPoint = strokes.reduce((highest, stroke) => Math.max(highest, ...stroke.points.map(point => point.y * DRAWING_BASE_HEIGHT)), 0)
@@ -65,7 +65,32 @@ const shiftStrokesAfter = (strokes: HandwritingStroke[], y: number, amount: numb
   return { ...stroke, points: stroke.points.map(point => ({ ...point, y: point.y + amount })) }
 })
 
-export const insertSpaceIntoStrokes = (strokes: HandwritingStroke[], y: number, amount: number) => shiftStrokesAfter(strokes, y, Math.max(0, amount))
+export const insertSpaceIntoStrokes = (strokes: HandwritingStroke[], y: number, amount: number) => shiftStrokesAfter(strokes, y, amount)
+
+/**
+ * Keep a space adjustment inside the drawable canvas. A negative adjustment
+ * removes space by moving the strokes below the line upward, while keeping
+ * strokes above the line and the canvas itself from being clipped.
+ */
+export const clampSpaceAdjustment = (strokes: HandwritingStroke[], y: number, requestedAmount: number, currentHeight: number) => {
+  const currentHeightUnits = Math.max(1, currentHeight / DRAWING_BASE_HEIGHT)
+  const trailingMargin = AUTO_EXTEND_TRIGGER / DRAWING_BASE_HEIGHT
+  const movingStrokes = strokes.filter(stroke => stroke.points.length && Math.min(...stroke.points.map(point => point.y)) >= y)
+  const stationaryStrokes = strokes.filter(stroke => stroke.points.length && Math.min(...stroke.points.map(point => point.y)) < y)
+  const minimumMovingY = movingStrokes.length
+    ? Math.min(...movingStrokes.flatMap(stroke => stroke.points.map(point => point.y)))
+    : Number.NEGATIVE_INFINITY
+  const maximumStationaryY = stationaryStrokes.length
+    ? Math.max(...stationaryStrokes.flatMap(stroke => stroke.points.map(point => point.y)))
+    : Number.NEGATIVE_INFINITY
+  const minimumAmount = Math.max(
+    1 - currentHeightUnits,
+    Number.isFinite(minimumMovingY) ? -minimumMovingY : Number.NEGATIVE_INFINITY,
+    Number.isFinite(maximumStationaryY) ? maximumStationaryY + trailingMargin - currentHeightUnits : Number.NEGATIVE_INFINITY,
+  )
+  const maximumAmount = MAX_DRAWING_HEIGHT / DRAWING_BASE_HEIGHT - currentHeightUnits
+  return clamp(requestedAmount, minimumAmount, maximumAmount)
+}
 
 interface SelectionBounds {
   minX: number
@@ -177,6 +202,16 @@ export function pathsForStroke(stroke: HandwritingStroke) {
   return paths.map((d, index) => ({ d, width: stroke.size * INK_WIDTH_LEVELS[index] })).filter(path => path.d)
 }
 
+export type HandwritingHistoryAction = 'undo' | 'redo'
+
+export const historyActionForShortcut = (key: string, hasPrimaryModifier: boolean, shiftKey: boolean, altKey: boolean): HandwritingHistoryAction | null => {
+  if (!hasPrimaryModifier || altKey) return null
+  const normalizedKey = key.toLowerCase()
+  if (normalizedKey === 'y' || (normalizedKey === 'z' && shiftKey)) return 'redo'
+  if (normalizedKey === 'z') return 'undo'
+  return null
+}
+
 interface TransformState {
   interaction: 'move' | 'scale'
   startPoint: HandwritingPoint
@@ -200,6 +235,7 @@ function HandwritingCanvas({ drawing, tool, color, size, expanded, selectedStrok
   const lassoPointsRef = useRef<HandwritingPoint[]>([])
   const spaceStartRef = useRef<HandwritingPoint | null>(null)
   const spacePreviewRef = useRef<{ y: number; amount: number } | null>(null)
+  const spacePointerHeightRef = useRef(canvasHeightForDrawing(drawing))
   const canvasHeightRef = useRef(canvasHeightForDrawing(drawing))
   const pointerCanvasHeightRef = useRef(canvasHeightForDrawing(drawing))
   const activePointerRef = useRef<number | null>(null)
@@ -220,6 +256,7 @@ function HandwritingCanvas({ drawing, tool, color, size, expanded, selectedStrok
     spaceStartRef.current = null
     spacePreviewRef.current = null
     const nextHeight = canvasHeightForDrawing(drawing)
+    spacePointerHeightRef.current = nextHeight
     canvasHeightRef.current = nextHeight
     pointerCanvasHeightRef.current = nextHeight
     setCanvasHeightUnits(nextHeight)
@@ -248,9 +285,10 @@ function HandwritingCanvas({ drawing, tool, color, size, expanded, selectedStrok
           : smoothedPressureRef.current * .24 + curvedPressure * .76
         smoothedPressureRef.current = pressure
       }
+      const pointerHeight = spaceStartRef.current ? spacePointerHeightRef.current : pointerCanvasHeightRef.current
       return {
         x: Math.min(1, Math.max(0, (pointerEvent.clientX - bounds.left) / bounds.width)),
-        y: Math.max(0, (pointerEvent.clientY - bounds.top) / bounds.height) * (pointerCanvasHeightRef.current / DRAWING_BASE_HEIGHT),
+        y: Math.max(0, (pointerEvent.clientY - bounds.top) / bounds.height) * (pointerHeight / DRAWING_BASE_HEIGHT),
         pressure,
       }
     })
@@ -331,6 +369,7 @@ function HandwritingCanvas({ drawing, tool, color, size, expanded, selectedStrok
     }
     if (eventTool === 'space') {
       activeInteractionRef.current = 'space'
+      spacePointerHeightRef.current = canvasHeightRef.current
       spaceStartRef.current = point
       spacePreviewRef.current = { y: point.y, amount: 0 }
       setSpacePreview(spacePreviewRef.current)
@@ -363,7 +402,7 @@ function HandwritingCanvas({ drawing, tool, color, size, expanded, selectedStrok
       const point = points.at(-1)
       const startPoint = spaceStartRef.current
       if (!point || !startPoint) return
-      const amount = Math.max(0, point.y - startPoint.y)
+      const amount = clampSpaceAdjustment(drawing.strokes, startPoint.y, point.y - startPoint.y, canvasHeightRef.current)
       spacePreviewRef.current = { y: startPoint.y, amount }
       setSpacePreview(spacePreviewRef.current)
       return
@@ -450,18 +489,17 @@ function HandwritingCanvas({ drawing, tool, color, size, expanded, selectedStrok
     if (interaction === 'space') {
       const startPoint = spaceStartRef.current
       const preview = spacePreviewRef.current
-      const requestedAmount = Math.max(MIN_INSERT_SPACE, preview?.amount || 0)
-      if (startPoint && requestedAmount > 0) {
-        const available = Math.max(0, (MAX_DRAWING_HEIGHT - canvasHeightRef.current) / DRAWING_BASE_HEIGHT)
-        const amount = Math.min(requestedAmount, available)
-        if (amount > 0) {
-          const nextHeight = canvasHeightRef.current + amount * DRAWING_BASE_HEIGHT
-          const nextStrokes = insertSpaceIntoStrokes(drawing.strokes, startPoint.y, amount)
-          onCommit({ ...drawing, aspectRatio: aspectRatioForCanvasHeight(nextHeight), strokes: nextStrokes })
-        }
+      const amount = startPoint && preview
+        ? clampSpaceAdjustment(drawing.strokes, startPoint.y, preview.amount, canvasHeightRef.current)
+        : 0
+      if (startPoint && Math.abs(amount) >= MIN_SPACE_ADJUSTMENT) {
+        const nextHeight = canvasHeightRef.current + amount * DRAWING_BASE_HEIGHT
+        const nextStrokes = insertSpaceIntoStrokes(drawing.strokes, startPoint.y, amount)
+        onCommit({ ...drawing, aspectRatio: aspectRatioForCanvasHeight(nextHeight), strokes: nextStrokes })
       }
       spaceStartRef.current = null
       spacePreviewRef.current = null
+      spacePointerHeightRef.current = canvasHeightRef.current
       setSpacePreview(null)
       return
     }
@@ -499,6 +537,14 @@ function HandwritingCanvas({ drawing, tool, color, size, expanded, selectedStrok
   const selectionBox = selectedBounds ? expandSelectionBounds(selectedBounds, .014, canvasMaxY) : null
   const lassoPath = lassoPoints.map(point => `${point.x * DRAWING_WIDTH},${point.y * DRAWING_BASE_HEIGHT}`).join(' ')
   const selectionHandleSize = 14
+  const spaceRangeTop = spacePreview
+    ? Math.min(spacePreview.y, spacePreview.y + spacePreview.amount) * DRAWING_BASE_HEIGHT
+    : 0
+  const spaceRangeHeight = spacePreview ? Math.abs(spacePreview.amount) * DRAWING_BASE_HEIGHT : 0
+  const spaceRangeStyle = spacePreview ? {
+    top: `${spaceRangeTop / previewCanvasHeightUnits * 100}%`,
+    height: `${Math.max(.8, spaceRangeHeight / previewCanvasHeightUnits * 100)}%`,
+  } : undefined
   const handlePoints: Array<{ handle: SelectionHandle; x: number; y: number }> = selectionBox ? [
     { handle: 'nw', x: selectionBox.minX, y: selectionBox.minY },
     { handle: 'ne', x: selectionBox.maxX, y: selectionBox.minY },
@@ -527,7 +573,10 @@ function HandwritingCanvas({ drawing, tool, color, size, expanded, selectedStrok
           <path key={`${stroke.id}-${index}`} d={path.d} fill="none" stroke={stroke.color} strokeWidth={path.width} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>,
         ]))}
         {currentStroke && pathsForStroke(currentStroke).map((path, index) => <path key={index} d={path.d} fill="none" stroke={currentStroke.color} strokeWidth={path.width} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>)}
-        {spacePreview && <line className="handwriting-space-preview" x1="0" x2={DRAWING_WIDTH} y1={spacePreview.y * DRAWING_BASE_HEIGHT} y2={spacePreview.y * DRAWING_BASE_HEIGHT} strokeDasharray="12 8"/>}
+        {spacePreview && <g className="handwriting-space-boundaries">
+          <line x1="0" x2={DRAWING_WIDTH} y1={spaceRangeTop} y2={spaceRangeTop} strokeDasharray="12 8"/>
+          <line x1="0" x2={DRAWING_WIDTH} y1={spaceRangeTop + spaceRangeHeight} y2={spaceRangeTop + spaceRangeHeight} strokeDasharray="12 8"/>
+        </g>}
         {lassoPoints.length > 1 && <polyline className="handwriting-lasso-preview" points={lassoPath} fill="rgba(143, 48, 40, .08)" stroke="#8f3028" strokeWidth="2" strokeDasharray="8 6" vectorEffect="non-scaling-stroke"/>}
         {selectionBox && tool === 'lasso' && <g className="handwriting-selection-overlay">
           <rect className="handwriting-selection-box" x={selectionBox.minX * DRAWING_WIDTH} y={selectionBox.minY * DRAWING_BASE_HEIGHT} width={(selectionBox.maxX - selectionBox.minX) * DRAWING_WIDTH} height={(selectionBox.maxY - selectionBox.minY) * DRAWING_BASE_HEIGHT}/>
@@ -544,6 +593,13 @@ function HandwritingCanvas({ drawing, tool, color, size, expanded, selectedStrok
           />)}
         </g>}
       </svg>
+      {spacePreview && <div
+        className={`handwriting-space-range ${spacePreview.amount < 0 ? 'shrinking' : 'inserting'}`}
+        style={spaceRangeStyle}
+        aria-live="polite"
+      >
+        <span>{spacePreview.amount === 0 ? '上下拖动调整范围' : `${spacePreview.amount > 0 ? '插入' : '收缩'} ${Math.max(1, Math.round(spaceRangeHeight))} px`}</span>
+      </div>}
       {!visibleStrokes.length && !currentStroke && <span>在这里书写，支持触控笔、触摸和鼠标</span>}
     </div>
   </div>
@@ -609,9 +665,17 @@ function HandwritingEditor(props: HandwritingEditorProps) {
   }
 
   const handleShortcutKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
+    if (event.defaultPrevented) return
     const target = event.target as HTMLElement
     if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
+    const historyAction = historyActionForShortcut(event.key, event.metaKey || event.ctrlKey, event.shiftKey, event.altKey)
+    if (historyAction) {
+      event.preventDefault()
+      if (historyAction === 'undo') props.onUndo()
+      else props.onRedo()
+      return
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) return
     const shortcutTool: Record<string, HandwritingTool> = { '1': 'eraser', '2': 'pen', '3': 'lasso', '4': 'space' }
     const nextTool = shortcutTool[event.key]
     if (!nextTool) return
@@ -631,7 +695,7 @@ function HandwritingEditor(props: HandwritingEditorProps) {
       <button className={props.tool === 'eraser' ? 'active' : ''} aria-label="橡皮擦" aria-keyshortcuts="1" title="橡皮（快捷键 1）" onClick={() => selectTool('eraser')}><Eraser size={15}/><span>橡皮</span></button>
       <button className={props.tool === 'pen' ? 'active' : ''} aria-label="画笔" aria-keyshortcuts="2" title="画笔（快捷键 2）" onClick={() => selectTool('pen')}><Pencil size={15}/><span>画笔</span></button>
       <button className={props.tool === 'lasso' ? 'active' : ''} aria-label="套索选择" aria-keyshortcuts="3" title="套索（快捷键 3）" onClick={() => selectTool('lasso')}><Lasso size={15}/><span>套索</span></button>
-      <button className={`handwriting-two-line ${props.tool === 'space' ? 'active' : ''}`} aria-label="插入空间" aria-keyshortcuts="4" title="插入空间（快捷键 4）：在画布上按住并向下拖动" onClick={() => selectTool('space')}><ArrowDownToLine size={15}/><TwoLineToolbarLabel first="插入" second="空间"/></button>
+      <button className={`handwriting-two-line ${props.tool === 'space' ? 'active' : ''}`} aria-label="插入或收缩空间" aria-keyshortcuts="4" title="插入空间（快捷键 4）：向下拖动插入，向上拖动收缩" onClick={() => selectTool('space')}><ArrowDownToLine size={15}/><TwoLineToolbarLabel first="插入" second="空间"/></button>
       <div className="handwriting-colors" role="group" aria-label="笔迹颜色">
         <span>颜色</span>
         <div className="handwriting-swatches">
@@ -665,8 +729,8 @@ function HandwritingEditor(props: HandwritingEditorProps) {
         </div>}
       </div>
       <span className="handwriting-toolbar-spacer"/>
-      <button aria-label="撤销" title="撤销" disabled={!props.canUndo} onClick={props.onUndo}><Undo2 size={15}/></button>
-      <button aria-label="重做" title="重做" disabled={!props.canRedo} onClick={props.onRedo}><Redo2 size={15}/></button>
+      <button aria-label="撤销" aria-keyshortcuts="Control+Z Meta+Z" title="撤销（Ctrl/⌘+Z）" disabled={!props.canUndo} onClick={props.onUndo}><Undo2 size={15}/></button>
+      <button aria-label="重做" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y" title="重做（Ctrl/⌘+Shift+Z 或 Ctrl+Y）" disabled={!props.canRedo} onClick={props.onRedo}><Redo2 size={15}/></button>
       <button className="handwriting-two-line" aria-label="删除选中笔迹" title="删除选中笔迹" disabled={!selectedStrokeIds.length} onClick={deleteSelection}><Trash2 size={15}/><TwoLineToolbarLabel first="删除" second="选中"/></button>
       <button aria-label="清空手写" title="清空手写" disabled={!props.drawing.strokes.length} onClick={props.onClear}><Trash2 size={15}/></button>
       {props.onExpand && <button className="handwriting-expand handwriting-two-line" onClick={props.onExpand}><Maximize2 size={15}/><TwoLineToolbarLabel first="放大" second="书写"/></button>}
@@ -704,7 +768,7 @@ export default function QuestionNotePanel({ questionId, note, onChange }: Questi
   const value = note || EMPTY_NOTE
   const drawing = value.drawing || emptyHandwritingDrawing()
   const [open, setOpen] = useState(false)
-  const [mode, setMode] = useState<'text' | 'handwriting'>('text')
+  const [mode, setMode] = useState<'text' | 'handwriting'>('handwriting')
   const [expanded, setExpanded] = useState(false)
   const [tool, setTool] = useState<HandwritingTool>('pen')
   const [color, setColor] = useState('#8f3028')
@@ -713,6 +777,7 @@ export default function QuestionNotePanel({ questionId, note, onChange }: Questi
   const [future, setFuture] = useState<HandwritingDrawing[]>([])
 
   useEffect(() => {
+    setMode('handwriting')
     setExpanded(false)
     setPast([])
     setFuture([])
@@ -764,13 +829,17 @@ export default function QuestionNotePanel({ questionId, note, onChange }: Questi
   }
 
   return <section className="question-note-section">
-    <button className="passage-answer-toggle question-note-toggle" aria-expanded={open} onClick={() => setOpen(previous => !previous)}>
+    <button className="passage-answer-toggle question-note-toggle" aria-expanded={open} onClick={() => setOpen(previous => {
+      const next = !previous
+      if (next) setMode('handwriting')
+      return next
+    })}>
       <NotebookPen size={17}/>{open ? '收起笔记' : '查看与编辑笔记'}{hasQuestionNote(note) && <em>已保存</em>}<ChevronDown className={open ? 'rotated' : ''} size={16}/>
     </button>
     {open && <div className="question-note-panel">
       <div className="question-note-tabs" role="tablist" aria-label="笔记类型">
-        <button role="tab" aria-selected={mode === 'text'} className={mode === 'text' ? 'active' : ''} onClick={() => setMode('text')}>文字笔记</button>
         <button role="tab" aria-selected={mode === 'handwriting'} className={mode === 'handwriting' ? 'active' : ''} onClick={() => setMode('handwriting')}>手写笔记</button>
+        <button role="tab" aria-selected={mode === 'text'} className={mode === 'text' ? 'active' : ''} onClick={() => setMode('text')}>文字笔记</button>
         <small>{value.updatedAt ? '已自动保存' : '输入或书写后自动保存'}</small>
       </div>
       {mode === 'text'

@@ -19,13 +19,13 @@ describe('mechanical professional banks', () => {
   it('includes all seven repaired books in the professional subject', () => {
     expect(mechanicalBanks).toHaveLength(7)
     expect(mechanicalBanks.map(bank => bank.name)).toEqual([
-      '机械原理·讲义课后习题',
-      '机械设计·讲义课后习题',
-      '机械原理·基础过关450题',
-      '机械原理·强化冲关220题',
-      '机械设计·基础过关600题',
-      '机械设计·考研通关680题',
-      '机械设计·强化班补充讲义',
+      '机械原理-讲义课后习题',
+      '机械设计-讲义课后习题',
+      '机械原理-基础过关450题',
+      '机械原理-强化冲关220题',
+      '机械设计-基础过关600题',
+      '机械设计-考研通关680题',
+      '机械设计-强化班补充讲义',
     ])
     expect(mechanicalBanks.every(bank => bank.subject === 'professional')).toBe(true)
     expect(mechanicalBanks.every(bank => bankSubject(bank) === 'professional')).toBe(true)

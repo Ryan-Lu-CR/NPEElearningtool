@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import QuestionNotePanel, { canvasHeightForDrawing, canvasHeightForStrokes, insertSpaceIntoStrokes, pathsForStroke } from './QuestionNotePanel'
+import QuestionNotePanel, { canvasHeightForDrawing, canvasHeightForStrokes, clampSpaceAdjustment, historyActionForShortcut, insertSpaceIntoStrokes, pathsForStroke } from './QuestionNotePanel'
 
 describe('QuestionNotePanel', () => {
   it('uses an answer-style disclosure and marks saved content', () => {
@@ -71,5 +71,29 @@ describe('QuestionNotePanel', () => {
     const result = insertSpaceIntoStrokes(strokes, .5, .25)
     expect(result[0].points[0].y).toBe(.2)
     expect(result[1].points[0].y).toBe(1.05)
+  })
+
+  it('removes space by moving strokes below the line upward without clipping them', () => {
+    const strokes = [
+      { id: 'above', color: '#000000', size: 2, input: 'pen' as const, points: [{ x: .2, y: .2 }] },
+      { id: 'below', color: '#000000', size: 2, input: 'pen' as const, points: [{ x: .2, y: .8 }] },
+    ]
+    const amount = clampSpaceAdjustment(strokes, .5, -1.5, 1200)
+    const result = insertSpaceIntoStrokes(strokes, .5, amount)
+    expect(amount).toBe(-.8)
+    expect(result[0].points[0].y).toBe(.2)
+    expect(result[1].points[0].y).toBe(0)
+  })
+
+  it('does not shrink the default canvas below its base height', () => {
+    expect(clampSpaceAdjustment([], .5, -1, 600)).toBe(0)
+  })
+
+  it('maps note history shortcuts to undo and redo', () => {
+    expect(historyActionForShortcut('z', true, false, false)).toBe('undo')
+    expect(historyActionForShortcut('Z', false, false, false)).toBe(null)
+    expect(historyActionForShortcut('z', true, true, false)).toBe('redo')
+    expect(historyActionForShortcut('y', true, false, false)).toBe('redo')
+    expect(historyActionForShortcut('z', true, false, true)).toBe(null)
   })
 })

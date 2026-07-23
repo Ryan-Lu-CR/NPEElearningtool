@@ -37,6 +37,7 @@ export const defaultBankIds = [
   'default-1784554026524-19',
   'english-exams',
   'default-mechanical-theory-lecture-exercises',
+  'default-mechanical-theory-textbook-exercises',
   'default-mechanical-design-lecture-exercises',
   'default-mechanical-theory-basic-450',
   'default-mechanical-theory-intensive-220',

@@ -138,7 +138,7 @@ class BankSpec:
 SPECS = (
     BankSpec(
         "default-mechanical-theory-lecture-exercises",
-        "机械原理·讲义课后习题",
+        "机械原理-讲义课后习题",
         "professional",
         ROOT / "拆分" / "机械原理讲义",
         {i: name for i, name in enumerate(THEORY_CHAPTERS, 1)},
@@ -146,7 +146,7 @@ SPECS = (
     ),
     BankSpec(
         "default-mechanical-design-lecture-exercises",
-        "机械设计·讲义课后习题",
+        "机械设计-讲义课后习题",
         "professional",
         ROOT / "拆分" / "机械设计讲义",
         DESIGN_CHAPTERS,

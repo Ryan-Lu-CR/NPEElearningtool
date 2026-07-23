@@ -34,6 +34,10 @@ function reviewEvents(activities: StudyActivity[], questionId: string) {
     .sort((left, right) => left.reviewedAt.localeCompare(right.reviewedAt))
 }
 
+function activityMarkedAt(activity: StudyActivity) {
+  return activity.firstUpdatedAt !== undefined ? activity.firstUpdatedAt : activity.updatedAt
+}
+
 export function buildQuestionReviewTimeline(activities: StudyActivity[], questionId: string): QuestionReviewTimeline {
   const questionActivities = activities
     .filter(item => item.questionId === questionId)
@@ -51,13 +55,13 @@ export function buildQuestionReviewTimeline(activities: StudyActivity[], questio
     : firstExplicit?.date === firstRecord.date ? firstExplicit.previousStatus : firstRecord.status
   const initialMark: QuestionReviewMark = {
     date: firstRecord.date,
-    markedAt: hasLegacyBaseline ? '' : firstRecord.firstUpdatedAt || firstRecord.updatedAt,
+    markedAt: hasLegacyBaseline ? '' : activityMarkedAt(firstRecord),
     status: initialStatus,
   }
 
   const inferredRecords = (hasLegacyBaseline ? records : records.slice(1))
     .filter(item => !firstExplicit || item.date < firstExplicit.date)
-    .map(item => ({ date: item.date, markedAt: item.firstUpdatedAt || item.updatedAt, status: item.status }))
+    .map(item => ({ date: item.date, markedAt: activityMarkedAt(item), status: item.status }))
   const reviewMarks: QuestionReviewMark[] = [
     ...inferredRecords,
     ...explicitReviews.map(item => ({ date: item.date, markedAt: item.reviewedAt, status: item.status })),
@@ -117,4 +121,41 @@ export function updateQuestionReview(
       ? { ...item, reviews: [...(item.reviews || []), event] }
       : item),
   }
+}
+
+export function resetQuestionReview(activities: StudyActivity[], questionId: string) {
+  const timeline = buildQuestionReviewTimeline(activities, questionId)
+  if (!timeline.initialMark || !timeline.reviews.length) {
+    return { status: timeline.initialMark?.status || 'none' as QuestionStatus, activities, reset: false }
+  }
+
+  const questionActivities = activities
+    .filter(item => item.questionId === questionId)
+    .sort((left, right) => left.date.localeCompare(right.date) || left.updatedAt.localeCompare(right.updatedAt))
+  const baselineActivity = questionActivities.find(item => item.date === timeline.initialMark?.date)
+  if (!baselineActivity) return { status: timeline.initialMark.status, activities, reset: false }
+
+  // A legacy activity may carry the initial status on the same record as the
+  // first review. Normalize that record so removing reviews does not make the
+  // activity reappear as a review the next time the timeline is built.
+  const { initialStatus: _initialStatus, reviews: _reviews, ...baselineFields } = baselineActivity
+  const retainedBaseline: StudyActivity = {
+    ...baselineFields,
+    status: timeline.initialMark.status,
+    firstUpdatedAt: timeline.initialMark.markedAt,
+    changeCount: 0,
+  }
+
+  let retainedBaselineAdded = false
+  const nextActivities = activities
+    .filter(item => {
+      if (item.questionId !== questionId) return true
+      if (item.date < timeline.initialMark!.date) return true
+      if (item !== baselineActivity || retainedBaselineAdded) return false
+      retainedBaselineAdded = true
+      return true
+    })
+    .map(item => item === baselineActivity ? retainedBaseline : item)
+
+  return { status: timeline.initialMark.status, activities: nextActivities, reset: true }
 }

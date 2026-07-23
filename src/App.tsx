@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, BookOpen, CalendarDays, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, FolderOpen, FolderSync, Menu, Pencil, Plus, RotateCcw, Search, Settings as SettingsIcon, X } from 'lucide-react'
+import { AlertCircle, BookOpen, CalendarDays, ChevronDown, ChevronRight, CircleHelp, Download, FileImage, FileText, FileUp, Filter, FolderOpen, FolderSync, Maximize2, Menu, Minimize2, NotebookPen, Pencil, Plus, RotateCcw, Search, Settings as SettingsIcon, Timer, Wrench, X } from 'lucide-react'
 import type { MathModule, Question, QuestionBank, QuestionStatus, ReadingQuestionType, Section, Subject } from './types'
 import { loadBanks, loadNavigation, renameBank, renameChapter, saveBanks, saveNavigation, validateBanks } from './store'
 import { deleteAssets } from './assets'
@@ -14,8 +14,9 @@ import { formatPassageParagraphs } from './passageFormatting'
 import { isImageAnswerPlaceholder } from './questionPresentation'
 import { sortBanksForDisplay } from './bankSorting'
 import LearningDashboard from './LearningDashboard'
+import DashboardQuestionDialog from './DashboardQuestionDialog'
 import { updateStudyActivity } from './studyActivity'
-import { buildQuestionReviewTimeline, updateQuestionReview } from './questionReview'
+import { buildQuestionReviewTimeline, resetQuestionReview, updateQuestionReview } from './questionReview'
 import { calculateLearningStats, calculateQuestionStats, formatRate } from './learningStats'
 import { resolveNavigation, resolveProfileBankId, type SavedNavigation } from './navigationRestore'
 import { removeRetiredBanks } from './bankMigration'
@@ -23,6 +24,8 @@ import { formatExamDateValue, getExamCountdown, parseExamDateValue } from './exa
 import { DEFAULT_USER_SETTINGS, loadUserSettings, saveUserSettings, validateUserSettings } from './userSettings'
 import { countMarkedQuestions, emptyStudyRound, getStudyRound, loadStudyRounds, migrateStudyRounds, saveStudyRounds, updateStudyRound } from './studyRounds'
 import QuestionNotePanel from './QuestionNotePanel'
+import TimerDialog from './TimerDialog'
+import NotesDialog from './NotesDialog'
 import { hasQuestionNote, loadQuestionNotes, saveQuestionNotes, validateQuestionNotes, type QuestionNote, type QuestionNotes } from './questionNotes'
 import { bankMathModule, bankMathModules, bankSubject, mathModuleLabels, mathModuleOrder, subjectLabels } from './subjects'
 import { englishSectionLabel, groupEnglishSections, type EnglishSectionGroupKey } from './englishNavigation'
@@ -202,6 +205,11 @@ export default function App() {
   const [newBankMathModule, setNewBankMathModule] = useState<MathModule>('calculus')
   const [namingHelpOpen, setNamingHelpOpen] = useState(false)
   const [settingsToolsOpen, setSettingsToolsOpen] = useState(false)
+  const [toolboxOpen, setToolboxOpen] = useState(false)
+  const [timerView, setTimerView] = useState<'closed' | 'large' | 'mini'>('closed')
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [noteQuestionPreview, setNoteQuestionPreview] = useState<{ bankId: string; questionId: string } | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [countdownNow, setCountdownNow] = useState(() => new Date())
   const [renameTarget, setRenameTarget] = useState<{ kind: 'bank' | 'chapter'; id: string; name: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -219,6 +227,7 @@ export default function App() {
   const imageImportRef = useRef<HTMLInputElement>(null)
   const printSheetRef = useRef<HTMLElement>(null)
   const settingsToolsRef = useRef<HTMLDivElement>(null)
+  const toolboxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (!saveBanks(banks)) setToast('浏览器存储空间不足，题库修改尚未保存；请连接题库文件夹或先导出备份') }, [banks])
   useEffect(() => {
@@ -245,6 +254,12 @@ export default function App() {
   }, [questionNotes, notesReady])
   useEffect(() => { const timer = window.setInterval(() => setCountdownNow(new Date()), 60 * 60 * 1000); return () => window.clearInterval(timer) }, [])
   useEffect(() => {
+    const syncFullscreenState = () => setIsFullscreen(document.fullscreenElement === document.documentElement)
+    document.addEventListener('fullscreenchange', syncFullscreenState)
+    syncFullscreenState()
+    return () => document.removeEventListener('fullscreenchange', syncFullscreenState)
+  }, [])
+  useEffect(() => {
     if (!settingsToolsOpen) return
     const closeOnOutside = (event: PointerEvent) => { if (!settingsToolsRef.current?.contains(event.target as Node)) setSettingsToolsOpen(false) }
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setSettingsToolsOpen(false) }
@@ -252,6 +267,14 @@ export default function App() {
     document.addEventListener('keydown', closeOnEscape)
     return () => { document.removeEventListener('pointerdown', closeOnOutside); document.removeEventListener('keydown', closeOnEscape) }
   }, [settingsToolsOpen])
+  useEffect(() => {
+    if (!toolboxOpen) return
+    const closeOnOutside = (event: PointerEvent) => { if (!toolboxRef.current?.contains(event.target as Node)) setToolboxOpen(false) }
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setToolboxOpen(false) }
+    document.addEventListener('pointerdown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => { document.removeEventListener('pointerdown', closeOnOutside); document.removeEventListener('keydown', closeOnEscape) }
+  }, [toolboxOpen])
   useEffect(() => {
     loadWorkspaceHandle().then(async handle => {
       if (!handle) { await loadDefaultWorkspace(); return }
@@ -315,6 +338,11 @@ export default function App() {
 
   const bank = banks.find(b => b.id === bankId) || banks[0]
   const subject = bankSubject(bank)
+  const notePreviewData = noteQuestionPreview ? (() => {
+    const targetBank = banks.find(item => item.id === noteQuestionPreview.bankId)
+    const targetEntry = targetBank && orderedQuestionEntriesForBank(targetBank).find(entry => entry.question.id === noteQuestionPreview.questionId)
+    return targetBank && targetEntry ? { bank: targetBank, entry: targetEntry } : null
+  })() : null
   const mathFolderLabel = newBankMathModule === 'exams' ? '真题' : newBankMathModule === 'linear' ? '线代' : '高数'
   const newBankFolderPreview = newBankSubject === 'math'
     ? `数学/${mathFolderLabel}/${safeFolderName(newBankName || '题库名称')}`
@@ -637,6 +665,15 @@ export default function App() {
     setStatuses(previous => ({ ...previous, [questionId]: result.status }))
     setToast(status === 'none' ? '已取消本次复习记录' : `第 ${buildQuestionReviewTimeline(result.activities, questionId).reviews.length} 次复习已记录为“${questionStatusMeta(questionEntry.question, result.status, targetBinaryMode).label}”`)
   }
+  function resetDashboardReview(targetBankId: string, questionId: string) {
+    const targetBank = banks.find(item => item.id === targetBankId)
+    if (!targetBank || !orderedQuestionEntriesForBank(targetBank).some(entry => entry.question.id === questionId)) return
+    const result = resetQuestionReview(activities, questionId)
+    if (!result.reset) return
+    setActivities(result.activities)
+    setStatuses(previous => ({ ...previous, [questionId]: result.status }))
+    setToast('已重置本题复习记录，初始标记已保留')
+  }
   function mark(status: QuestionStatus) { if (question) markQuestion(question.id, status, question) }
   function togglePassageAnswer(questionId: string) {
     setExpandedPassageAnswers(previous => {
@@ -663,12 +700,25 @@ export default function App() {
     setAnswerOpen(false)
   }
   function navigateToBankQuestion(entry: BankQuestionEntry) {
-    const targetSection = bank.chapters.flatMap(chapter => chapter.sections).find(item => item.id === entry.sectionId)
+    openQuestionFromNote(bank.id, entry.question.id)
+  }
+  function openQuestionFromNote(bankId: string, questionId: string) {
+    const targetBank = banks.find(item => item.id === bankId)
+    const entry = targetBank && orderedQuestionEntriesForBank(targetBank).find(item => item.question.id === questionId)
+    if (!targetBank || !entry) return
+    const targetSection = targetBank.chapters.flatMap(chapter => chapter.sections).find(item => item.id === entry.sectionId)
     if (!targetSection) return
     const targetIndex = targetSection.questions.findIndex(item => item.id === entry.question.id)
+    if (bankSubject(targetBank) === 'math') setMathModule(bankMathModule(targetBank))
+    setActivePage('study'); setBankId(targetBank.id); setNotesOpen(false); setToolboxOpen(false)
     setExpandedChapterIds(previous => new Set(previous).add(entry.chapterId))
     setSectionId(entry.sectionId); setQuestionIndex(Math.max(0, targetIndex)); setAnswerOpen(false); setExpandedPassageAnswers(new Set()); setFilter('all'); setQuery(''); setView('section')
     window.requestAnimationFrame(() => document.getElementById(`question-${entry.question.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+  function openNoteQuestionPreview(bankId: string, questionId: string) {
+    const targetBank = banks.find(item => item.id === bankId)
+    if (!targetBank || !orderedQuestionEntriesForBank(targetBank).some(entry => entry.question.id === questionId)) return
+    setNoteQuestionPreview({ bankId, questionId })
   }
   function markReadingType(questionId: string, readingType: ReadingQuestionType | '') {
     setBanks(previous => previous.map(item => ({ ...item, chapters: item.chapters.map(chapter => ({ ...chapter, sections: chapter.sections.map(itemSection => ({
@@ -1053,6 +1103,15 @@ export default function App() {
     setToast('已恢复默认考试日期')
   }
 
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else await document.documentElement.requestFullscreen()
+    } catch {
+      setToast('当前浏览器不支持全屏显示')
+    }
+  }
+
   return <div className="app-shell">
     <header>
       {activePage === 'study' && <button className="mobile-menu" onClick={() => setSidebar(true)} aria-label="打开菜单"><Menu/></button>}
@@ -1069,6 +1128,13 @@ export default function App() {
         <input ref={node => { imageImportRef.current = node; node?.setAttribute('webkitdirectory', '') }} hidden type="file" multiple accept="image/*" onChange={e => importImages(e.target.files)}/>
         <div className="header-sync-status" title={workspaceState === 'connected' ? `已同步：${defaultWorkspaceConnected ? '默认题库' : workspaceHandle?.name}` : '数据与位置保存在本地'}><span className={`source-dot ${workspaceState === 'connected' ? 'workspace-on' : ''}`}/><span>{workspaceState === 'connected' ? '已同步' : workspaceState === 'syncing' ? '同步中' : '本地保存'}</span></div>
         {workspaceState === 'connected' && <button className="workspace-sync-button" type="button" aria-label="重新同步题库" title="重新同步题库" onClick={connectWorkspace}><FolderSync/></button>}
+        <div className="toolbox-module" ref={toolboxRef}>
+          <button className={toolboxOpen ? 'tool-button toolbox-trigger active' : 'tool-button toolbox-trigger'} type="button" aria-label="工具箱" aria-haspopup="menu" aria-expanded={toolboxOpen} onClick={() => setToolboxOpen(open => !open)}><Wrench/><span>工具箱</span><ChevronDown/></button>
+          {toolboxOpen && <div className="toolbox-popover" role="menu">
+            <div className="toolbox-heading"><div><strong>工具箱</strong><small>学习过程中随手使用的实用工具</small></div><button type="button" aria-label="关闭工具箱" onClick={() => setToolboxOpen(false)}><X/></button></div>
+            <section><span>学习工具</span><div><button role="menuitem" type="button" onClick={() => { setToolboxOpen(false); setTimerView('large') }}><Timer/><span><strong>计时器</strong><small>记录专注学习时长，支持小窗显示</small></span></button><button role="menuitem" type="button" onClick={() => { setToolboxOpen(false); setNotesOpen(true) }}><NotebookPen/><span><strong>我的笔记</strong><small>按题库和章节汇总查看所有题目笔记</small></span></button></div></section>
+          </div>}
+        </div>
         <div className="settings-tools-module" ref={settingsToolsRef}>
           <button className={settingsToolsOpen ? 'tool-button settings-tools-trigger active' : 'tool-button settings-tools-trigger'} aria-label="设置" aria-haspopup="menu" aria-expanded={settingsToolsOpen} onClick={() => { setNewBankSubject(subject); setSettingsToolsOpen(open => !open) }}><SettingsIcon/><span>设置</span><ChevronDown/></button>
           {settingsToolsOpen && <div className="settings-tools-popover" role="menu"><div className="settings-tools-heading"><div><strong>设置与数据</strong><small>题库连接、素材、导出和个人数据统一管理</small></div><button aria-label="关闭设置" onClick={() => setSettingsToolsOpen(false)}><X/></button></div>
@@ -1082,6 +1148,7 @@ export default function App() {
             <section><span>导出与备份</span><div><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); setExportOpen(true) }}><FileText/><span><strong>导出题目</strong><small>按当前范围生成 PDF 或图片</small></span></button><button role="menuitem" onClick={() => { setSettingsToolsOpen(false); exportData() }}><Download/><span><strong>完整备份</strong><small>保存题库、学习记录和题目笔记</small></span></button></div></section>
           </div>}
         </div>
+        <button className="fullscreen-toggle" type="button" aria-label={isFullscreen ? '退出全屏' : '全屏显示'} title={isFullscreen ? '退出全屏' : '全屏显示'} onClick={() => { void toggleFullscreen() }}>{isFullscreen ? <Minimize2/> : <Maximize2/>}</button>
         <a className="github-link" href={githubRepositoryUrl} target="_blank" rel="noreferrer" aria-label="在 GitHub 查看考研学习空间" title="在 GitHub 查看项目"><GitHubMark/></a>
       </div>
     </header>
@@ -1138,12 +1205,13 @@ export default function App() {
       </aside></>}
 
       <main className={activePage === 'profile' ? 'profile-main' : ''}>
-        {activePage === 'profile' ? <LearningDashboard banks={banks} statuses={statuses} activities={activities} notes={questionNotes} selectedBankId={profileBankId} onSelectedBankIdChange={setProfileBankId} onQuestionStatusChange={markDashboardQuestion} onQuestionReviewStatusChange={markDashboardReview} onQuestionNoteChange={updateQuestionNote}/> : <>
+        {activePage === 'profile' ? <LearningDashboard banks={banks} statuses={statuses} activities={activities} notes={questionNotes} selectedBankId={profileBankId} onSelectedBankIdChange={setProfileBankId} onQuestionStatusChange={markDashboardQuestion} onQuestionReviewStatusChange={markDashboardReview} onQuestionReviewReset={resetDashboardReview} onQuestionNoteChange={updateQuestionNote}/> : <>
         <div className="page-head"><div><span className="breadcrumb">{bank.name} <ChevronRight size={13}/>{view === 'section' && currentChapter && !isMathExamKeyPointMode && <>{currentChapter.name} <ChevronRight size={13}/></>}{view === 'wrong' ? '本题库不熟练题' : currentStudyLabel}</span><div className="page-head-title-row"><h1>{view === 'wrong' ? '本题库不熟练题' : currentStudyLabel === '未选择' ? '请选择具体节题目' : currentStudyLabel}</h1><p>{view === 'wrong' ? `按章节和小节分组 · 共 ${reviewQuestions.length} 道不熟练题` : isMathExamKeyPointMode ? `按考点归类 · 共 ${sourceQuestions.length} 道题` : section ? `共 ${section.questions.length} 道题` : '从左侧选择一个章节开始学习'}</p></div></div>
-          <div className="search"><Search size={17}/><input value={query} onChange={e => { setQuery(e.target.value); setQuestionIndex(0) }} placeholder={view === 'wrong' ? '搜索不熟练题' : isMathExamKeyPointMode ? '搜索当前考点' : '搜索当前小节'}/></div>
+          <div className="page-head-tools">
+            <div className="filter-row"><Filter size={16}/><span>筛选</span>{filterOptions.map(s => <button key={s} className={filter === s ? 'chip active' : 'chip'} onClick={() => { setFilter(s); setQuestionIndex(0) }}>{s === 'all' ? '全部' : (binaryFilterMode ? binaryStatusMeta[s].label : statusMeta[s].label)}</button>)}</div>
+            <div className="search"><Search size={17}/><input value={query} onChange={e => { setQuery(e.target.value); setQuestionIndex(0) }} placeholder={view === 'wrong' ? '搜索不熟练题' : isMathExamKeyPointMode ? '搜索当前考点' : '搜索当前小节'}/></div>
+          </div>
         </div>
-
-        <div className="filter-row"><Filter size={16}/><span>筛选</span>{filterOptions.map(s => <button key={s} className={filter === s ? 'chip active' : 'chip'} onClick={() => { setFilter(s); setQuestionIndex(0) }}>{s === 'all' ? '全部' : (binaryFilterMode ? binaryStatusMeta[s].label : statusMeta[s].label)}</button>)}</div>
 
         {question && view === 'section' && (section?.passage || section?.passageImageUrls?.length || isPartBSection) ? <div className="passage-study-shell"><div className="passage-study">
           <section className="passage-questions" aria-label="题目与选项">
@@ -1177,7 +1245,7 @@ export default function App() {
         </div><nav className="question-nav passage-question-nav" aria-label={showFullPaperNavigation ? '全卷导航' : '题号导航'}><div><strong>{showFullPaperNavigation ? '全卷导航' : '题号导航'}</strong><small>点击快速跳转</small></div><div className="number-grid">{showFullPaperNavigation ? currentPaperEntries.map(entry => { const item = entry.question; const itemStatus = effectiveQuestionStatus(item, statuses[item.id] || 'none', binaryFilterMode); return <button key={item.id} aria-current={item.id === question.id ? 'true' : undefined} title={`${entry.sectionName} · 第 ${item.number} 题`} className={`${item.id === question.id ? 'selected ' : ''}${itemStatus}`} onClick={() => navigateToBankQuestion(entry)}>{item.number}</button> }) : filteredQuestions.map((item, index) => { const itemStatus = effectiveQuestionStatus(item, statuses[item.id] || 'none', binaryFilterMode); return <button key={item.id} aria-current={index === questionIndex ? 'true' : undefined} title={`第 ${item.number} 题`} className={`${index === questionIndex ? 'selected ' : ''}${itemStatus}`} onClick={() => jumpToPassageQuestion(item.id, index)}>{item.number}</button> })}</div><div className="legend"><span><i/>未标记</span><span><i className="green"/>正确</span><span><i className="red"/>错误</span></div><div className="nav-accuracy"><span>本卷正确率</span><strong>{formatRate(currentNavigationStats.accuracy)}</strong><small>{currentNavigationStats.marked} 道题已标记</small></div></nav></div> : question ? <div className="study-layout">
           <section className="question-card">
             <div className="question-top"><div><span className="number">{String(question.number).padStart(2,'0')}</span>{currentQuestionEntry && <span className="wrong-context">{currentQuestionEntry.chapterName} · {currentQuestionEntry.sectionName}</span>}</div><nav className="question-top-pager" aria-label="上下题切换"><button disabled={questionIndex === 0} onClick={() => moveQuestion(-1)}><span>←</span> 上一题</button><em>{questionIndex + 1} / {filteredQuestions.length}</em><button disabled={questionIndex >= filteredQuestions.length - 1} onClick={() => moveQuestion(1)}>下一题 <span>→</span></button></nav><span className={`current-status ${currentQuestionStatus}`}>{currentQuestionStatusMeta.icon} {currentQuestionStatusMeta.label}</span></div>
-            {(question.type || question.score !== undefined || question.keyPoint) && <div className="question-meta-row" aria-label="题目信息">{question.type && <span>{question.type}</span>}{question.score !== undefined && <span>{question.score}分</span>}{question.keyPoint && <span className="question-key-point">{isMathExamBank ? mathExamKeyPointLabel(question.keyPoint) : question.keyPoint}</span>}</div>}
+            {((question.type && !(subject === 'professional' && question.type === '图片题')) || question.score !== undefined || question.keyPoint) && <div className="question-meta-row" aria-label="题目信息">{question.type && !(subject === 'professional' && question.type === '图片题') && <span>{question.type}</span>}{question.score !== undefined && <span>{question.score}分</span>}{question.keyPoint && <span className="question-key-point">{isMathExamBank ? mathExamKeyPointLabel(question.keyPoint) : question.keyPoint}</span>}</div>}
             <div className="question-content">{questionText && <p>{questionText}</p>}<AssetGallery keys={question.imageKeys} urls={question.imageUrl ? [question.imageUrl] : []} alt="题目配图"/>{question.options && <div className="options">{question.options.map((o, i) => <div key={i}>{o}</div>)}</div>}</div>
             <button className="answer-toggle passage-answer-toggle standard-answer-toggle" onClick={() => setAnswerOpen(v => !v)}><CircleHelp size={19}/>{answerOpen ? '收起答案与解析' : '查看答案与解析'}<ChevronDown className={answerOpen ? 'rotated' : ''} size={18}/></button>
             {answerOpen && <div className={`${hasAnswerImages ? 'answer answer-with-images' : 'answer'} passage-answer standard-answer-panel`}>{!usesImageAnswer && <div className="answer-result"><span>参考答案</span><strong>{question.answer}</strong></div>}<div className={usesImageAnswer ? 'answer-analysis combined-image-answer' : 'answer-analysis'}><span>{usesImageAnswer ? '参考答案和解析' : '原版解析'}</span>{hasAnswerImages ? <AssetGallery keys={question.answerImageKeys} urls={question.answerImageUrl ? [question.answerImageUrl] : []} alt={usesImageAnswer ? '参考答案和解析' : '原版解析截图'} eager/> : <p className="analysis-missing">原版解析截图暂未收录</p>}</div>{question.videoUrl && <a href={question.videoUrl} target="_blank" rel="noreferrer">观看视频解析 →</a>}</div>}
@@ -1206,5 +1274,8 @@ export default function App() {
     {exportOpen && <ExportDialog banks={banks} statuses={statuses} defaultBankId={bank.id} defaultSectionId={sectionId} onClose={() => setExportOpen(false)} onPdf={printExport} onNotice={setToast}/>}
     {renameTarget && <div className="modal-backdrop" onClick={() => setRenameTarget(null)}><section className="modal-card rename-card" role="dialog" aria-modal="true" aria-labelledby="rename-title" onClick={event => event.stopPropagation()}><button className="modal-close" aria-label="关闭" onClick={() => setRenameTarget(null)}><X/></button><span className="modal-icon"><Pencil/></span><h2 id="rename-title">重命名{renameTarget.kind === 'bank' ? '题库' : '章节'}</h2><p>只修改显示名称，不会改变题目、图片或学习状态。</p><label>新名称<input autoFocus value={renameValue} onChange={event => setRenameValue(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') applyRename() }} placeholder={renameTarget.name}/></label><button className="primary-button" onClick={applyRename}>保存名称</button></section></div>}
     {settingsOpen && <SettingsDialog banks={banks} activeBankId={bank.id} builtInIds={new Set(builtInBanks.map(item => item.id))} protectedBankIds={protectedBankIds} onClose={() => setSettingsOpen(false)} onOpenNewBank={() => openNewBank(newBankSubject)} onClearMarks={clearMarks} onExportBank={exportSingleBank} onResetBank={resetManagedBank} onDeleteBank={deleteManagedBank} onRestoreBuiltIns={restoreBuiltIns} onFactoryReset={factoryReset}/>}
+    {notesOpen && <NotesDialog banks={banks} notes={questionNotes} onClose={() => setNotesOpen(false)} onOpenQuestion={openNoteQuestionPreview}/>}
+    {notePreviewData && <DashboardQuestionDialog bankName={notePreviewData.bank.name} chapterName={notePreviewData.entry.chapterName} sectionName={notePreviewData.entry.sectionName} question={notePreviewData.entry.question} status={statuses[notePreviewData.entry.question.id] || 'none'} activities={activities} note={questionNotes[notePreviewData.entry.question.id]} binaryMode={bankSubject(notePreviewData.bank) === 'english'} onStatusChange={(status, answerRevealed) => markDashboardQuestion(notePreviewData.bank.id, notePreviewData.entry.question.id, status, answerRevealed)} onReviewStatusChange={(status, answerRevealed) => markDashboardReview(notePreviewData.bank.id, notePreviewData.entry.question.id, status, answerRevealed)} onResetReview={() => resetDashboardReview(notePreviewData.bank.id, notePreviewData.entry.question.id)} onNoteChange={note => updateQuestionNote(notePreviewData.entry.question.id, note)} onClose={() => setNoteQuestionPreview(null)}/>}
+    {timerView !== 'closed' && <TimerDialog view={timerView} onViewChange={setTimerView} onClose={() => setTimerView('closed')}/>}
   </div>
 }
