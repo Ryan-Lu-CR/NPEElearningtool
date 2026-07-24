@@ -161,7 +161,6 @@ export default function DashboardQuestionDialog({ bankName, chapterName, section
               <span>{hasQuestionNavigation ? `第 ${questionIndex + 1} / ${questions.length} 题` : '题目切换'}</span>
               <button disabled={!hasQuestionNavigation || questionIndex >= questions.length - 1} onClick={onNextQuestion}>下一题<ChevronRight size={14}/></button>
             </div>
-            <div className="dashboard-question-status-group"><span>掌握情况</span>{statusControls}</div>
           </footer>
         : <footer className="dashboard-question-status"><span>掌握情况</span>{statusControls}</footer>}
       </div>

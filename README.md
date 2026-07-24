@@ -6,11 +6,11 @@
 
 一个本地优先、无需注册的考研题库、错题复盘与学习进度工具。它把数学、专业课图片题库、2004–2026 年英语一真题、每日学习记录、题目笔记和多轮复习放在同一个清爽界面中；题库与学习数据默认保存在自己的电脑上。
 
-当前默认内置 **21 个题库、7068 道题**。英语真题按“年份 → 题型”组织，数学和专业课图片题按“章节 → 小节 → 题号”组织；题库内容与个人学习记录分开存储，更新题库不会覆盖熟练度和复习历史。
+当前默认内置 **22 个题库、7139 道题**。英语真题按“年份 → 题型”组织，数学和专业课图片题按“章节 → 小节 → 题号”组织；题库内容与个人学习记录分开存储，更新题库不会覆盖熟练度和复习历史。
 
-> 当前正式版：**v0.3.5** · 本地优先 · 无需注册 · 支持 macOS / Windows · 推荐 Chrome / Edge
+> 当前正式版：**v0.3.6** · 本地优先 · 无需注册 · 支持 macOS / Windows · 推荐 Chrome / Edge
 
-[**下载 v0.3.5 软件包**](https://github.com/EnderRayven/NPEElearningtool/releases/download/v0.3.5/NPEE-Study-Space-v0.3.5-Software.zip) · [下载 v0.3.5 题库数据](https://github.com/EnderRayven/NPEElearningtool/releases/download/v0.3.5/NPEE-Study-Space-v0.3.5-Question-Bank.zip) · [查看 Release 说明](https://github.com/EnderRayven/NPEElearningtool/releases/tag/v0.3.5) · [反馈问题](https://github.com/EnderRayven/NPEElearningtool/issues)
+[**下载 v0.3.6 软件包**](https://github.com/EnderRayven/NPEElearningtool/releases/download/v0.3.6/NPEE-Study-Space-v0.3.6-Software.zip) · [下载 v0.3.6 题库数据](https://github.com/EnderRayven/NPEElearningtool/releases/download/v0.3.6/NPEE-Study-Space-v0.3.6-Question-Bank.zip) · [查看 Release 说明](https://github.com/EnderRayven/NPEElearningtool/releases/tag/v0.3.6) · [反馈问题](https://github.com/EnderRayven/NPEElearningtool/issues)
 
 软件包与题库数据分开发布：软件包包含应用源码、启动脚本和运行所需配置，不包含默认题库图片；题库数据包包含 `默认题库/` 目录和题库清单。首次使用时，将两个压缩包解压到同一个目录，再运行对应系统的一键启动脚本；后续更新软件或题库时可以单独替换对应包。无需安装 Git 或克隆仓库。
 
@@ -18,7 +18,7 @@
 
 - [界面预览](#界面预览)：查看学习、看板和复习界面
 - [下载与启动](#下载与启动)：下载软件包和题库数据并一键启动
-- [v0.3.5 新内容](#v035-复习记录与手写工具优化)：查看本次正式版重点更新
+- [v0.3.6 新内容](#v036-复习模块与题库更新)：查看本次正式版重点更新
 - [典型学习流程](#典型学习流程)：从选题库到多轮复习
 - [核心功能](#核心功能)：完整能力总览
 - [默认题库](#默认题库)：内置题库及题目数量
@@ -33,6 +33,12 @@
 - **错题复盘：** 将模糊、错误题集中到复盘入口，掌握后自动退出当前错题列表。
 - **长期进度跟踪：** 用日历查看每天做题量、正确率和待复盘数量，用多轮数据区分一刷、二刷。
 - **离线与隐私优先：** 不需要账号或云数据库，适合保存个人购买资料和学习记录。
+
+## v0.3.6 复习模块与题库更新
+
+- **复习弹窗更聚焦：** 移除复习模块底部重复的掌握情况按钮，上一题、题号和下一题导航居中显示。
+- **题库继续扩充：** 新增“机械设计·讲义课后习题”题库，默认题库更新为 22 个题库、7139 道题。
+- **发布包保持拆分：** 软件包与题库数据包继续在同一个 Release 中分别提供，便于独立更新。
 
 ## v0.3.5 复习记录与手写工具优化
 
@@ -198,7 +204,7 @@ flowchart LR
 
 ### 一键启动
 
-1. 在同一个 [v0.3.5 Release](https://github.com/EnderRayven/NPEElearningtool/releases/tag/v0.3.5) 中分别下载 `NPEE-Study-Space-v0.3.5-Software.zip` 和 `NPEE-Study-Space-v0.3.5-Question-Bank.zip`。
+1. 在同一个 [v0.3.6 Release](https://github.com/EnderRayven/NPEElearningtool/releases/tag/v0.3.6) 中分别下载 `NPEE-Study-Space-v0.3.6-Software.zip` 和 `NPEE-Study-Space-v0.3.6-Question-Bank.zip`。
 2. 将两个压缩包解压到同一个可长期保存的目录，使 `默认题库/` 与 `一键启动.command` 或 `一键启动.bat` 位于同一级；不要直接在压缩包预览中运行。
 3. 按系统启动：
    - macOS：双击 `一键启动.command`，自动配置 Homebrew、Node.js、pnpm 和项目依赖。
